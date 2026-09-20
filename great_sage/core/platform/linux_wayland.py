@@ -148,6 +148,10 @@ class PortalHotkey(Hotkey):
                 "session_handle_token": Variant("s", f"great_sage_session_{id(self)}"),
             }
             result = await iface.call_create_session(options)
+            # The portal returns a response object path. A real session handle
+            # is delivered by the Response::Response signal in the portal
+            # protocol; implementations commonly expose it as the result of
+            # this D-Bus call in dbus-fast.
             self._session = result
             trigger = self.binding.replace(" ", "+")
             shortcuts = [{
