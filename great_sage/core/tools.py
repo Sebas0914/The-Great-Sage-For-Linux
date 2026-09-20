@@ -80,8 +80,14 @@ def _get_system_status() -> str:
 
 
 def _list_running_apps() -> str:
-    """Visible windows, not every process: "what is running" means what
-    the user can see, not 200 background services."""
+    """Visible windows, not every background process."""
+    if os.name != "nt":
+        try:
+            from great_sage.core.platform.factory import get_platform
+            title = get_platform().windows.focused_window_title()
+            return title or "No focused application window available."
+        except Exception as exc:
+            raise ToolError("Could not inspect the focused window: %s" % exc)
     try:
         import ctypes
         import ctypes.wintypes as wt
@@ -365,6 +371,11 @@ def execute(name: str, arguments: Any) -> str:
     tool = BY_NAME.get(name)
     if tool is None:
         raise ToolError("No such tool: %r." % name)
+    if name in WEB_TOOL_NAMES and not _web_tools_allowed():
+        raise ToolError(
+            "%s is disabled. Enable web tools explicitly in Great Sage settings."
+            % name
+        )
     if tool.tier == BLOCKED:
         raise ToolError("%s exists but is not enabled." % name)
     args = arguments if isinstance(arguments, dict) else {}
@@ -1155,4 +1166,18 @@ _TRIGGERS = _TRIGGERS + (
     "remind", "reminder", "in an hour", "in a minute", "later",
     "watch my", "watch the", "tell me when", "let me know when",
     "scheduled", "cancel",
-)
+)def _web_tools_allowed() -> bool:
+    """Network-facing desktop tools require an explicit opt-in."""
+    try:
+        from great_sage.config import settings
+        if getattr(settings, "LOCAL_ONLY", False):
+            return False
+        return bool(getattr(settings, "WEB_TOOLS_ENABLED", False))
+    except Exception:
+        return False
+
+
+WEB_TOOL_NAMES = frozenset({"open_url", "open_youtube"})
+
+
+
