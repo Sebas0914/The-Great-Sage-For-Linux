@@ -168,17 +168,28 @@ def build_provider(data, fallback):
             key = str(keys.get("nvidia", "")).strip()
             if not key:
                 return fallback, "Ollama / Local (NVIDIA key missing)"
-            from great_sage.models.nvidia_provider import NvidiaProvider
-            model = (
+            from great_sage.models.nvidia_provider import NvidiaProvider, NvidiaRoutingProvider
+            fast_model = (
                 data.get("nvidia_fast_model")
                 or settings.NVIDIA_API_MODEL_FAST
             )
-            return NvidiaProvider(
+            complex_model = (
+                data.get("nvidia_complex_model")
+                or settings.NVIDIA_API_MODEL_COMPLEX
+            )
+            fast = NvidiaProvider(
                 api_key=key,
-                model=model,
+                model=fast_model,
                 base_url=settings.NVIDIA_API_BASE_URL,
                 timeout=settings.NVIDIA_API_TIMEOUT,
-            ), "NVIDIA API"
+            )
+            complex_provider = NvidiaProvider(
+                api_key=key,
+                model=complex_model,
+                base_url=settings.NVIDIA_API_BASE_URL,
+                timeout=settings.NVIDIA_API_TIMEOUT,
+            )
+            return NvidiaRoutingProvider(fast, complex_provider), "NVIDIA API (fast/complex)"
 
         if want == "nvidia_local":
             from great_sage.models.nvidia_provider import NvidiaProvider
