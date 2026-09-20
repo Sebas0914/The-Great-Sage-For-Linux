@@ -12,6 +12,8 @@ import subprocess
 import tempfile
 from typing import Any, Dict
 
+from great_sage.models.base import ModelProvider, ModelProviderError
+
 log = logging.getLogger(__name__)
 
 PROVIDERS = ("local", "nvidia", "nvidia_local", "anthropic", "openai")
@@ -150,6 +152,54 @@ def web_allowed(data: Dict[str, Any]) -> bool:
         return False
 
 
+class FallbackProvider(ModelProvider):
+    """Try one provider first, then a second provider only on failure."""
+
+    def __init__(self, primary, secondary):
+        self.primary = primary
+        self.secondary = secondary
+        self.last_provider = "primary"
+
+    def send_message(self, messages):
+        try:
+            result = self.primary.send_message(messages)
+            self.last_provider = "primary"
+            return result
+        except ModelProviderError:
+            self.last_provider = "secondary"
+            return self.secondary.send_message(messages)
+
+    def stream_response(self, messages):
+        emitted = False
+        try:
+            for piece in self.primary.stream_response(messages):
+                emitted = True
+                yield piece
+            self.last_provider = "primary"
+            return
+        except ModelProviderError:
+            if emitted:
+                raise
+        self.last_provider = "secondary"
+        yield from self.secondary.stream_response(messages)
+
+    def chat_raw(self, messages, tools=None, response_format=None):
+        try:
+            result = self.primary.chat_raw(
+                messages, tools=tools, response_format=response_format)
+            self.last_provider = "primary"
+            return result
+        except ModelProviderError:
+            self.last_provider = "secondary"
+            return self.secondary.chat_raw(
+                messages, tools=tools, response_format=response_format)
+
+    def get_available_models(self):
+        return list(dict.fromkeys(
+            self.primary.get_available_models() + self.secondary.get_available_models()
+        ))
+
+
 def build_provider(data, fallback):
     """Build the selected provider, enforcing local-only mode."""
     data = data or {}
@@ -165,7 +215,7 @@ def build_provider(data, fallback):
     routing = str(os.environ.get("GREAT_SAGE_AI_MODE", "nvidia_first")).lower()
     if bool(data.get("local_only")) or bool(getattr(settings, "LOCAL_ONLY", False)) or (mode is not None and not mode.allow_online):
         return fallback, "Ollama / Local (local-only)"
-    if routing == "local_only" or routing == "local_first" or want == "local":
+    if routing == "local_only" or want == "local":
         return fallback, "Ollama / Local"
 
     try:
@@ -197,6 +247,11 @@ def build_provider(data, fallback):
                 base_url=settings.NVIDIA_API_BASE_URL,
                 timeout=settings.NVIDIA_API_TIMEOUT,
             )
+            remote = NvidiaRoutingProvider(
+                fast, complex_provider, fallback=None
+            )
+            if routing == "local_first":
+                return FallbackProvider(fallback, remote), "Local first / NVIDIA fallback"
             return NvidiaRoutingProvider(
                 fast, complex_provider, fallback=fallback
             ), "NVIDIA API (fast/complex, local fallback)"
