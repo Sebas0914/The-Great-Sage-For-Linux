@@ -673,10 +673,11 @@ def main() -> int:
     # policy doesn't apply. This is our own window, not a web page, so
     # autoplay is exactly what we want. Must be set before webview.start()
     # creates the WebView2 environment, which reads it once.
-    os.environ.setdefault(
-        "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
-        "--autoplay-policy=no-user-gesture-required",
-    )
+    if os.name == "nt":
+        os.environ.setdefault(
+            "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
+            "--autoplay-policy=no-user-gesture-required",
+        )
 
     html_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "hud_prototype.html")
     api = _HudHostApi()
@@ -695,23 +696,25 @@ def main() -> int:
     # With no frame there is nothing native to drag or close by, so the
     # page MUST provide both: #win-controls draws minimise/maximise/close
     # and #win-drag is the grab strip, all wired to _HudHostApi.
-    window = webview.create_window(
-        "Great Sage", html_path, width=1920, height=1080,
-        background_color="#030b08", js_api=api, transparent=True,
-        frameless=True,
-        # easy_drag defaults to TRUE for frameless windows, which makes the
-        # ENTIRE window a drag surface - press anywhere on the visual and it
-        # moves. Measured: a press in the dead centre moved the window by
-        # (151,79). The page defines its own drag region instead (the
-        # #win-drag strip, via app-region), so this must be off or it
-        # overrides that and there is no way to click anything.
-        easy_drag=False,
-        # Native sizing borders on all edges and corners. pywebview applies
-        # this at creation, unlike the WS_THICKFRAME bit set later, which
-        # never took effect because the WebView2 child window covers the
-        # whole client area and swallows the frame's hit-testing.
-        resizable=True,
-    )
+    # Windows can use the transparent/frameless host used by the original
+    # HUD. Linux webview backends do not share those Win32 window-style
+    # APIs, so start with a normal native window there. The HUD remains
+    # fully usable; advanced click-through overlay controls stay Windows-
+    # specific until a native Linux overlay host is implemented.
+    window_kwargs = {
+        "width": 1920,
+        "height": 1080,
+        "background_color": "#030b08",
+        "js_api": api,
+        "resizable": True,
+    }
+    if os.name == "nt":
+        window_kwargs.update({
+            "transparent": True,
+            "frameless": True,
+            "easy_drag": False,
+        })
+    window = webview.create_window("Great Sage", html_path, **window_kwargs)
     api.attach(window)
 
     # Centre the window once the page is up.
@@ -725,12 +728,15 @@ def main() -> int:
     # _place() uses the monitor WORK AREA, so it also keeps clear of the
     # taskbar.
     def _centre_window():
-        hwnd = api._hwnd()
-        if hwnd:
-            api._place(hwnd, "centre")
-            # Restores edge/corner resizing that went away with the frame.
-            api.set_resizable(True)
-        api.fix_host_background()
+        if os.name == "nt":
+            hwnd = api._hwnd()
+            if hwnd:
+                api._place(hwnd, "centre")
+                # Restores edge/corner resizing that went away with the frame.
+                api.set_resizable(True)
+            api.fix_host_background()
+        else:
+            log.info("Linux HUD: using the native webview window host")
 
     try:
         window.events.loaded += _centre_window
