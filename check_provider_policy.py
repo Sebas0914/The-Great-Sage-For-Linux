@@ -46,6 +46,33 @@ def run():
     finally:
         settings.LOCAL_ONLY = old_local_only
 
+    # LOCAL_FIRST must actually try local before NVIDIA, then fall back only
+    # when the local provider reports a provider-level failure.
+    from great_sage.models.base import ModelProviderError
+    class Primary:
+        def send_message(self, messages):
+            raise ModelProviderError("local unavailable")
+        def stream_response(self, messages):
+            raise ModelProviderError("local unavailable")
+            yield
+        def chat_raw(self, messages, tools=None, response_format=None):
+            raise ModelProviderError("local unavailable")
+        def get_available_models(self):
+            return ["local"]
+    class Secondary:
+        def send_message(self, messages):
+            return "remote"
+        def stream_response(self, messages):
+            yield "remote"
+        def chat_raw(self, messages, tools=None, response_format=None):
+            return {"content": "remote"}
+        def get_available_models(self):
+            return ["remote"]
+    chained = ai_settings.FallbackProvider(Primary(), Secondary())
+    assert chained.send_message([]) == "remote"
+    assert list(chained.stream_response([])) == ["remote"]
+    assert chained.chat_raw([])["content"] == "remote"
+
     # A missing NVIDIA key must fail closed to the local provider.
     missing_key = dict(ai_settings.DEFAULTS, mode="companion",
                        chat_provider="nvidia", keys={})
