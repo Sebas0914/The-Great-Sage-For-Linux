@@ -110,6 +110,7 @@ CI runs these checks on the Linux development branch and pull requests.
 ## Known limitations
 
 - A real KDE Wayland session is required to validate the desktop integrations end-to-end; CI validates their contracts but cannot reproduce the user's desktop session.
+- The original transparent/click-through overlay host is Windows-specific. Linux currently uses the normal native HUD window rather than pretending the Win32 overlay works.
 - Screen capture depends on KDE Spectacle being available.
 - NVIDIA-hosted AI requires an API key and network access.
 - F5-TTS and faster-whisper have substantial model/runtime dependencies.
