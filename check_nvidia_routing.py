@@ -27,11 +27,26 @@ def run():
 
     simple = [{"role": "user", "content": "hola, ¿cómo estás?"}]
     hard = [{"role": "user", "content": "ayúdame a depurar este error de Python y explicar la arquitectura"}]
+    ambiguous = [{"role": "user", "content": "Necesito decidir cómo organizar esta tarea y quiero que me expliques qué enfoque tendría más sentido para mi proyecto."}]
 
     assert router.send_message(simple) == "fast"
     assert router.last_route == "fast"
     assert router.send_message(hard) == "complex"
     assert router.last_route == "complex"
+
+    class ClassifyingFast(Fake):
+        def chat_raw(self, messages, tools=None, response_format=None):
+            self.calls += 1
+            if response_format:
+                return {"content": '{"route":"complex"}'}
+            return {"content": "classified-answer"}
+
+    classifier_fast = ClassifyingFast("fast")
+    classifier_complex = Fake("complex")
+    classified_router = NvidiaRoutingProvider(classifier_fast, classifier_complex)
+    assert classified_router.send_message(ambiguous) == "classified-answer"
+    assert classified_router.last_route == "complex"
+    assert classified_router.last_classification == "complex"
     assert list(router.stream_response(simple)) == ["fast"]
     assert router.last_route == "fast"
     assert router.chat_raw(hard, tools=[])["content"] == "complex"
