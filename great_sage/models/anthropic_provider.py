@@ -156,7 +156,7 @@ class AnthropicProvider(ModelProvider):
             raise ModelProviderError(
                 "Anthropic returned an unexpected response format.") from exc
 
-    def chat_raw(self, messages, tools=None):
+    def chat_raw(self, messages, tools=None, response_format=None):
         """Ollama-shaped message dict, so one tool loop serves everything.
 
         Anthropic returns a list of content BLOCKS - text and tool_use
