@@ -10,7 +10,7 @@
 #
 # NOT a Python dependency, and NOT bundleable: Ollama must be installed
 # separately and the model pulled once -
-#   https://ollama.com/download   then:  ollama pull qwen2.5:3b
+#   https://ollama.com/download   then:  ollama pull qwen3.5:4b
 
 # --- Core / platform ---------------------------------------------------
 requests>=2.31
