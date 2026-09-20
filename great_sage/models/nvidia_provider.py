@@ -20,13 +20,14 @@ class NvidiaProvider(ModelProvider):
     def __init__(self, api_key: str = "", model: str = "",
                  base_url: str = "https://integrate.api.nvidia.com/v1",
                  timeout: int = 120, temperature: float = 0.2,
-                 max_tokens: int = 2048):
+                 max_tokens: int = 2048, reasoning_effort: str = ""):
         self.api_key = (api_key or "").strip()
         self.model = model.strip()
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
         self.temperature = temperature
         self.max_tokens = max_tokens
+        self.reasoning_effort = (reasoning_effort or "").strip()
 
     @property
     def is_remote(self) -> bool:
@@ -40,7 +41,7 @@ class NvidiaProvider(ModelProvider):
             headers["Authorization"] = f"Bearer {self.api_key}"
         return headers
 
-    def _payload(self, messages, stream=False, tools=None):
+    def _payload(self, messages, stream=False, tools=None, response_format=None):
         body = {
             "model": self.model,
             "messages": messages,
@@ -50,9 +51,13 @@ class NvidiaProvider(ModelProvider):
         }
         if tools:
             body["tools"] = tools
+        if response_format:
+            body["response_format"] = response_format
+        if self.reasoning_effort:
+            body["reasoning_effort"] = self.reasoning_effort
         return body
 
-    def _post(self, messages, stream=False, tools=None):
+    def _post(self, messages, stream=False, tools=None, response_format=None):
         if not self.model:
             raise ModelProviderError("NVIDIA provider has no model configured.")
         if self.is_remote and not self.api_key:
@@ -61,7 +66,7 @@ class NvidiaProvider(ModelProvider):
             return requests.post(
                 f"{self.base_url}/chat/completions",
                 headers=self._headers(),
-                json=self._payload(messages, stream, tools),
+                json=self._payload(messages, stream, tools, response_format),
                 timeout=self.timeout,
                 stream=stream,
             )
@@ -118,8 +123,8 @@ class NvidiaProvider(ModelProvider):
         except (ValueError, KeyError, IndexError) as exc:
             raise ModelProviderError("NVIDIA returned an invalid streaming response.") from exc
 
-    def chat_raw(self, messages, tools=None):
-        response = self._post(messages, tools=tools)
+    def chat_raw(self, messages, tools=None, response_format=None):
+        response = self._post(messages, tools=tools, response_format=response_format)
         try:
             response.raise_for_status()
         except requests.exceptions.HTTPError as exc:
@@ -145,7 +150,7 @@ class NvidiaProvider(ModelProvider):
             raise ModelProviderError("NVIDIA returned an invalid model list.") from exc
 
 class NvidiaRoutingProvider(ModelProvider):
-    """Route ordinary turns to a fast NVIDIA model and hard turns to a complex one."""
+    """Route turns between fast/complex NVIDIA models with local fallback."""
 
     COMPLEX_MARKERS = (
         "debug", "debugging", "error", "exception", "traceback", "stack trace",
@@ -156,6 +161,8 @@ class NvidiaRoutingProvider(ModelProvider):
         "explica en detalle", "paso a paso", "multiple files", "varios archivos",
         "document", "documento", "long context", "why does", "por qué",
     )
+    CLASSIFIER_MIN_CHARS = 80
+    CLASSIFIER_MAX_CHARS = 1399
 
     def __init__(self, fast: NvidiaProvider, complex_provider: NvidiaProvider,
                  fallback: ModelProvider = None):
@@ -164,6 +171,62 @@ class NvidiaRoutingProvider(ModelProvider):
         self.fallback = fallback
         self.last_route = "fast"
         self.last_provider = "nvidia"
+        self.last_classification = ""
+
+    @staticmethod
+    def _user_text(messages):
+        for message in reversed(messages):
+            if message.get("role") == "user":
+                return str(message.get("content") or "").strip()
+        return ""
+
+    @classmethod
+    def _obvious_complex(cls, text):
+        low = text.lower()
+        return len(text) >= 1400 or any(marker in low for marker in cls.COMPLEX_MARKERS)
+
+    def _classify(self, text):
+        if not (self.CLASSIFIER_MIN_CHARS <= len(text) <= self.CLASSIFIER_MAX_CHARS):
+            return None
+        prompt = [
+            {"role": "system", "content":
+                'Classify the request for routing. Return JSON only: {"route":"fast"} '
+                'or {"route":"complex"}. Use complex for multi-step reasoning, difficult '
+                'debugging, substantial code/project analysis, architecture, planning, '
+                'or detailed synthesis. Use fast for ordinary conversation, simple '
+                'explanations, short factual answers, and straightforward actions. '
+                'Do not solve the request.'},
+            {"role": "user", "content": text},
+        ]
+        try:
+            result = self.fast.chat_raw(
+                prompt, response_format={"type": "json_object"})
+            raw = result.get("content") or ""
+            route = str(json.loads(raw).get("route", "")).strip().lower()
+            if route in {"fast", "complex"}:
+                self.last_classification = route
+                return route == "complex"
+        except (ModelProviderError, ValueError, TypeError, AttributeError, KeyError):
+            pass
+        self.last_classification = ""
+        return None
+
+    def _looks_complex(self, messages):
+        text = self._user_text(messages)
+        if self._obvious_complex(text):
+            self.last_classification = "complex"
+            return True
+        classified = self._classify(text)
+        if classified is not None:
+            return classified
+        self.last_classification = "fast"
+        return False
+
+    def _select(self, messages):
+        provider = self.complex if self._looks_complex(messages) else self.fast
+        self.last_route = "complex" if provider is self.complex else "fast"
+        self.last_provider = "nvidia"
+        return provider
 
     def _call_with_fallback(self, method, *args, **kwargs):
         provider = self._select(args[0])
@@ -174,23 +237,6 @@ class NvidiaRoutingProvider(ModelProvider):
                 raise
             self.last_provider = "local-fallback"
             return getattr(self.fallback, method)(*args, **kwargs)
-
-    @classmethod
-    def _looks_complex(cls, messages) -> bool:
-        for message in reversed(messages):
-            if message.get("role") != "user":
-                continue
-            text = str(message.get("content") or "").lower()
-            if len(text) >= 1400:
-                return True
-            return any(marker in text for marker in cls.COMPLEX_MARKERS)
-        return False
-
-    def _select(self, messages):
-        provider = self.complex if self._looks_complex(messages) else self.fast
-        self.last_route = "complex" if provider is self.complex else "fast"
-        self.last_provider = "nvidia"
-        return provider
 
     def send_message(self, messages: List[Message]) -> str:
         return self._call_with_fallback("send_message", messages)
@@ -203,21 +249,17 @@ class NvidiaRoutingProvider(ModelProvider):
                 emitted = True
                 yield piece
         except ModelProviderError:
-            # Never splice a second answer onto a partially emitted NVIDIA
-            # response. A fallback is safe only when the remote call failed
-            # before producing any user-visible text.
             if self.fallback is None or emitted:
                 raise
             self.last_provider = "local-fallback"
             yield from self.fallback.stream_response(messages)
 
-    def chat_raw(self, messages, tools=None):
-        return self._call_with_fallback("chat_raw", messages, tools=tools)
+    def chat_raw(self, messages, tools=None, response_format=None):
+        return self._call_with_fallback(
+            "chat_raw", messages, tools=tools, response_format=response_format)
 
     def get_available_models(self) -> List[str]:
-        # The configured IDs are already known. Avoid two startup network
-        # calls merely to rediscover the same models; callers that need live
-        # server discovery can query NvidiaProvider directly.
         return list(dict.fromkeys(
             model for model in (self.fast.model, self.complex.model) if model
         ))
+
