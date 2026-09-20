@@ -40,7 +40,7 @@ def run():
     tool = provider.messages[-2]
     assert assistant["tool_calls"][0]["id"] == "preroute-get_time"
     assert tool["tool_call_id"] == "preroute-get_time"
-    assert "tool_name" not in tool
+    assert set(tool) == {"role", "content", "tool_call_id"}
     assert tool["content"] == "Monday 12:00"
 
     print("OK - prerouted tool calls use matching IDs")
