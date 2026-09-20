@@ -15,8 +15,8 @@ import sys
 ACTIVE_PROVIDER = os.environ.get("GREAT_SAGE_PROVIDER", "nvidia")
 AI_ROUTING_MODE = os.environ.get("GREAT_SAGE_AI_MODE", "nvidia_first").lower()
 NVIDIA_API_BASE_URL = os.environ.get("GREAT_SAGE_NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1")
-NVIDIA_API_MODEL_FAST = os.environ.get("GREAT_SAGE_NVIDIA_FAST_MODEL", "nvidia/llama-3.1-nemotron-nano-8b-v1")
-NVIDIA_API_MODEL_COMPLEX = os.environ.get("GREAT_SAGE_NVIDIA_COMPLEX_MODEL", "openai/gpt-oss-120b")
+NVIDIA_API_MODEL_FAST = os.environ.get("GREAT_SAGE_NVIDIA_FAST_MODEL", "openai/gpt-oss-20b")
+NVIDIA_API_MODEL_COMPLEX = os.environ.get("GREAT_SAGE_NVIDIA_COMPLEX_MODEL", "nvidia/nemotron-3-super-120b-a12b")
 NVIDIA_API_TIMEOUT = int(os.environ.get("GREAT_SAGE_NVIDIA_TIMEOUT", "120"))
 LOCAL_ONLY = os.environ.get("GREAT_SAGE_LOCAL_ONLY", "false").lower() in {"1", "true", "yes", "on"}
 WEB_TOOLS_ENABLED = os.environ.get("GREAT_SAGE_WEB_TOOLS", "false").lower() in {"1", "true", "yes", "on"}
