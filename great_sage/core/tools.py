@@ -1168,7 +1168,7 @@ _TRIGGERS = _TRIGGERS + (
     "remind", "reminder", "in an hour", "in a minute", "later",
     "watch my", "watch the", "tell me when", "let me know when",
     "scheduled", "cancel",
-)def _web_tools_allowed() -> bool:
+)\n\ndef _web_tools_allowed() -> bool:
     """Network-facing desktop tools require an explicit opt-in."""
     try:
         from great_sage.config import settings
