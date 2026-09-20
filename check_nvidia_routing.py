@@ -37,7 +37,34 @@ def run():
     assert router.chat_raw(hard, tools=[])["content"] == "complex"
     assert router.last_route == "complex"
     assert router.get_available_models() == ["fast", "complex"]
-    print("OK - NVIDIA fast/complex routing contract")
+
+    class Failing(Fake):
+        def send_message(self, messages):
+            self.calls += 1
+            raise Exception("not reached")
+
+    # The fallback contract is exercised with the real provider error type.
+    from great_sage.models.base import ModelProviderError
+    class FailingProvider(Fake):
+        def send_message(self, messages):
+            self.calls += 1
+            raise ModelProviderError("offline")
+        def chat_raw(self, messages, tools=None):
+            self.calls += 1
+            raise ModelProviderError("offline")
+        def stream_response(self, messages):
+            self.calls += 1
+            raise ModelProviderError("offline")
+            yield
+
+    fallback = Fake("local")
+    failing = FailingProvider("nvidia-offline")
+    router = NvidiaRoutingProvider(failing, complex_provider, fallback=fallback)
+    assert router.send_message(simple) == "local"
+    assert router.last_provider == "local-fallback"
+    assert router.chat_raw(simple)["content"] == "local"
+    assert list(router.stream_response(simple)) == ["local"]
+    print("OK - NVIDIA routing and local fallback contract")
 
 
 if __name__ == "__main__":
