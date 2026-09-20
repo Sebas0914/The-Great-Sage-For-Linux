@@ -154,6 +154,12 @@ def _resolve_app(name: str) -> Optional[str]:
 
 
 def _open_application(name: str) -> str:
+    if os.name != "nt":
+        try:
+            from great_sage.core.platform.factory import get_platform
+            return get_platform().launcher.open_application(name)
+        except Exception as exc:
+            raise ToolError(str(exc)) from exc
     target = _resolve_app(name)
     if not target:
         raise ToolError(
@@ -165,7 +171,6 @@ def _open_application(name: str) -> str:
         raise ToolError("Could not launch %s: %s" % (name, exc))
     return "Launched %s." % os.path.splitext(os.path.basename(target))[0]
 
-
 def _open_url(url: str) -> str:
     u = (url or "").strip()
     if not u:
@@ -176,14 +181,17 @@ def _open_url(url: str) -> str:
             raise ToolError(
                 "Refused: only http and https can be opened, not %s."
                 % u.split("://")[0])
-        # A bare domain, which is what a model usually produces for
-        # "open youtube".
         u = "https://" + u
+    if os.name != "nt":
+        try:
+            from great_sage.core.platform.factory import get_platform
+            return get_platform().launcher.open_url(u)
+        except Exception as exc:
+            raise ToolError(str(exc)) from exc
     import webbrowser
     if not webbrowser.open(u):
         raise ToolError("No browser available to open %s." % u)
     return "Opened %s." % u
-
 
 def _youtube_first_video(query):
     """The watch URL of the top result, or None.
@@ -229,20 +237,16 @@ def _open_youtube(query: str, first: bool = False) -> str:
 
 
 def _open_folder(path: str) -> str:
+    if os.name != "nt":
+        try:
+            from great_sage.core.platform.factory import get_platform
+            return get_platform().launcher.open_path(path)
+        except Exception as exc:
+            raise ToolError(str(exc)) from exc
     p = os.path.expandvars(os.path.expanduser((path or "").strip()))
     if not p:
         raise ToolError("No folder given.")
     if not os.path.exists(p):
-        # Models are bad at real paths here. Asked to open "my Downloads
-        # folder" they produce either a bare "Downloads" or an invented
-        # POSIX path like "/Users/your_username/Downloads" - both were
-        # observed. Refusing those reads as the tool being broken, when
-        # the INTENT was perfectly clear.
-        #
-        # So fall back to the last path segment resolved against this
-        # user's real home directory, which turns both forms into the
-        # folder actually meant. Still a real check: a segment matching
-        # no folder is refused, so this cannot open something arbitrary.
         leaf = os.path.basename(p.rstrip("/" + chr(92))) or p
         candidate = os.path.join(os.path.expanduser("~"), leaf)
         if os.path.isdir(candidate):
@@ -256,7 +260,6 @@ def _open_folder(path: str) -> str:
     except Exception as exc:
         raise ToolError("Could not open %s: %s" % (p, exc))
     return "Opened %s." % p
-
 
 def _search_files(query: str) -> str:
     """Name search over the usual user folders. Deliberately not the whole
@@ -441,6 +444,12 @@ def take_pending_images() -> List[str]:
 
 
 def _focused_window() -> str:
+    if os.name != "nt":
+        try:
+            from great_sage.core.platform.factory import get_platform
+            return get_platform().windows.focused_window_title() or "unknown"
+        except Exception:
+            return "unknown"
     try:
         import ctypes
         u = ctypes.windll.user32
@@ -452,7 +461,6 @@ def _focused_window() -> str:
         return buf.value.strip() or "an untitled window"
     except Exception:
         return "unknown"
-
 
 def _capture(region: str = "") -> str:
     """Screenshot the desktop (or just the focused window) for the model.
