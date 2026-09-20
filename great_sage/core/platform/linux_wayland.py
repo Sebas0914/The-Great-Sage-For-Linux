@@ -392,7 +392,8 @@ class PortalHotkey(Hotkey):
             target=self._run, daemon=True, name="great-sage-shortcuts"
         )
         self._thread.start()
-        return True
+        self._ready_event.wait(timeout=2.0)
+        return self.active and self._error is None
 
     def stop(self) -> None:
         self.active = False
