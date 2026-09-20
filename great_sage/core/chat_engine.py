@@ -214,7 +214,7 @@ class ChatEngine:
                                              "function": {"name": name,
                                                           "arguments": "{}"}}]})
             outgoing.append({"role": "tool", "content": str(result),
-                             "tool_name": name, "tool_call_id": call_id})
+                             "tool_call_id": call_id})
         if preroute_results:
             # And said plainly as well. The pair above is the correct
             # format; this is the belt to its braces, because a wrong
