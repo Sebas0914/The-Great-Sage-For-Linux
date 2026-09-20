@@ -13,6 +13,7 @@ import tempfile
 from typing import Any, Dict
 
 from great_sage.models.base import ModelProvider, ModelProviderError
+from great_sage.config import settings as _global_settings
 
 log = logging.getLogger(__name__)
 
@@ -220,7 +221,6 @@ def build_provider(data, fallback):
 
     try:
         from great_sage.config import settings
-        _global_settings = settings
         keys = data.get("keys") or {}
 
         if want == "nvidia":
