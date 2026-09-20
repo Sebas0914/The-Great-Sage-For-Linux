@@ -143,3 +143,55 @@ class NvidiaProvider(ModelProvider):
             raise ModelProviderError("Could not query NVIDIA models.") from exc
         except (ValueError, KeyError) as exc:
             raise ModelProviderError("NVIDIA returned an invalid model list.") from exc
+
+class NvidiaRoutingProvider(ModelProvider):
+    """Route ordinary turns to a fast NVIDIA model and hard turns to a complex one."""
+
+    COMPLEX_MARKERS = (
+        "debug", "debugging", "error", "exception", "traceback", "stack trace",
+        "program", "programming", "code", "codigo", "código", "python", "flutter",
+        "javascript", "linux", "git", "github", "repo", "repository", "project",
+        "proyecto", "architecture", "arquitectura", "refactor", "implement",
+        "implementation", "implementa", "analiza", "analyze", "analysis",
+        "explica en detalle", "paso a paso", "multiple files", "varios archivos",
+        "document", "documento", "long context", "why does", "por qué",
+    )
+
+    def __init__(self, fast: NvidiaProvider, complex_provider: NvidiaProvider):
+        self.fast = fast
+        self.complex = complex_provider
+        self.last_route = "fast"
+
+    @classmethod
+    def _looks_complex(cls, messages) -> bool:
+        for message in reversed(messages):
+            if message.get("role") != "user":
+                continue
+            text = str(message.get("content") or "").lower()
+            if len(text) >= 1400:
+                return True
+            return any(marker in text for marker in cls.COMPLEX_MARKERS)
+        return False
+
+    def _select(self, messages):
+        provider = self.complex if self._looks_complex(messages) else self.fast
+        self.last_route = "complex" if provider is self.complex else "fast"
+        return provider
+
+    def send_message(self, messages: List[Message]) -> str:
+        return self._select(messages).send_message(messages)
+
+    def stream_response(self, messages: List[Message]) -> Iterator[str]:
+        return self._select(messages).stream_response(messages)
+
+    def chat_raw(self, messages, tools=None):
+        return self._select(messages).chat_raw(messages, tools=tools)
+
+    def get_available_models(self) -> List[str]:
+        models = []
+        for provider in (self.fast, self.complex):
+            try:
+                models.extend(provider.get_available_models())
+            except ModelProviderError:
+                continue
+        return list(dict.fromkeys(models))
