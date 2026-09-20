@@ -7,6 +7,7 @@ focused-window information. No global keyboard hooks are used on Wayland.
 import asyncio
 import os
 import subprocess
+import shutil
 import urllib.parse
 from pathlib import Path
 from typing import Dict, Optional
@@ -83,6 +84,22 @@ class LinuxWaylandLauncher(AppLauncher):
             raise RuntimeError("Only http and https URLs are allowed.")
         _desktop_command(["xdg-open", value])
         return f"Opened {value}."
+
+    def capture_screen(self, output_path: str) -> str:
+        """Capture the Wayland desktop through KDE Spectacle."""
+        path = str(Path(output_path).expanduser())
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        if not shutil.which("spectacle"):
+            raise RuntimeError(
+                "KDE Spectacle is not installed; Wayland screen capture is unavailable."
+            )
+        _desktop_command([
+            "spectacle", "--background", "--nonotify",
+            "--fullscreen", "--output", path,
+        ])
+        if not Path(path).is_file():
+            raise RuntimeError("Spectacle did not create the screenshot.")
+        return path
 
 
 class _KWinBridge:
