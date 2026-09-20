@@ -6,7 +6,7 @@ feeds into the same ChatEngine path a typed message would.
 
 The model loads lazily (first call only) and stays cached for the life of
 the process - loading takes a couple seconds, so it happens once, not per
-utterance. First run also downloads the model (~145MB for "base.en") to
+utterance. First run also downloads the multilingual base Whisper model to
 the Hugging Face cache.
 """
 
@@ -23,9 +23,9 @@ def _get_model():
     global _model
     if _model is None:
         from faster_whisper import WhisperModel
-        # base.en: English-only, ~145MB, good accuracy/speed balance on
+        # base: multilingual, good accuracy/speed balance on
         # CPU for short utterances. int8 compute keeps it fast without a GPU.
-        _model = WhisperModel("base.en", device="cpu", compute_type="int8")
+        _model = WhisperModel("base", device="cpu", compute_type="int8")
     return _model
 
 
@@ -36,7 +36,7 @@ def transcribe(audio: np.ndarray) -> str:
         log.warning("Transcription skipped: empty recording")
         return ""
     model = _get_model()
-    segments, _ = model.transcribe(audio, language="en", vad_filter=True)
+    from great_sage.config import settings\n    segments, _ = model.transcribe(audio, language=getattr(settings, "INPUT_LANGUAGE", "es"), vad_filter=True)
     text = "".join(seg.text for seg in segments).strip()
 
     # An empty result used to be completely silent: faster_whisper logged
