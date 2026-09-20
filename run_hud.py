@@ -1,3 +1,6 @@
+        if os.name != "nt":
+            log.info("Overlay host is not enabled on Linux; keeping native HUD window")
+            return False
 """
 Great Sage HUD - native app entry point.
 
