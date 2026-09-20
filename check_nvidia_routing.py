@@ -77,7 +77,7 @@ def run():
         def send_message(self, messages):
             self.calls += 1
             raise ModelProviderError("offline")
-        def chat_raw(self, messages, tools=None):
+        def chat_raw(self, messages, tools=None, response_format=None):
             self.calls += 1
             raise ModelProviderError("offline")
         def stream_response(self, messages):
