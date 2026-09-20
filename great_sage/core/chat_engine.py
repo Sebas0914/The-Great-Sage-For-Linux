@@ -204,12 +204,16 @@ class ChatEngine:
             # So the call it would have made is written in front of the
             # result, giving the shape the model was trained on: assistant
             # asks, tool answers.
+            # Give the synthetic call a stable id too. OpenAI-compatible
+            # providers (including NVIDIA) validate that every tool result
+            # points back to the assistant tool call that requested it.
+            call_id = "preroute-%s" % name
             outgoing.append({"role": "assistant", "content": "",
-                             "tool_calls": [{"type": "function",
+                             "tool_calls": [{"id": call_id, "type": "function",
                                              "function": {"name": name,
                                                           "arguments": {}}}]})
             outgoing.append({"role": "tool", "content": str(result),
-                             "tool_name": name})
+                             "tool_name": name, "tool_call_id": call_id})
         if preroute_results:
             # And said plainly as well. The pair above is the correct
             # format; this is the belt to its braces, because a wrong
