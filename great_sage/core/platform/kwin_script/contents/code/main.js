@@ -27,3 +27,16 @@ function reportCurrent() {
 
 workspace.windowActivated.connect(report);
 reportCurrent();
+
+/*
+ * Great Sage may start after the KWin script. Retry briefly so the initial
+ * active window is not lost; normal updates still come from windowActivated.
+ */
+let retries = 0;
+const retryTimer = setInterval(function() {
+    reportCurrent();
+    retries += 1;
+    if (retries >= 10) {
+        clearInterval(retryTimer);
+    }
+}, 1000);
