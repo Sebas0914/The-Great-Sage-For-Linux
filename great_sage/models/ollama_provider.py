@@ -7,11 +7,14 @@ knows or cares that it's Ollama specifically.
 """
 
 import json
+import logging
 from typing import Iterator, List
 
 import requests
 
 from great_sage.models.base import Message, ModelProvider, ModelProviderError
+
+log = logging.getLogger(__name__)
 
 
 class OllamaProvider(ModelProvider):
