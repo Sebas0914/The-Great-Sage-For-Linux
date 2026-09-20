@@ -197,7 +197,9 @@ def build_provider(data, fallback):
                 base_url=settings.NVIDIA_API_BASE_URL,
                 timeout=settings.NVIDIA_API_TIMEOUT,
             )
-            return NvidiaRoutingProvider(fast, complex_provider), "NVIDIA API (fast/complex)"
+            return NvidiaRoutingProvider(
+                fast, complex_provider, fallback=fallback
+            ), "NVIDIA API (fast/complex, local fallback)"
 
         if want == "nvidia_local":
             from great_sage.models.nvidia_provider import NvidiaProvider
