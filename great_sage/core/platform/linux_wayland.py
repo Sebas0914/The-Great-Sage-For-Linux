@@ -147,14 +147,13 @@ class PortalHotkey(Hotkey):
 
     async def _create_session(self, bus, iface, Variant):
         token = f"great_sage_{id(self)}"
-        request_path = self._request_path(bus, token)
-        future = await self._wait_response(bus, request_path)
-        await iface.call_create_session({
+        request_path = await iface.call_create_session({
             "handle_token": Variant("s", token),
             "session_handle_token": Variant(
                 "s", f"great_sage_session_{id(self)}"
             ),
         })
+        future = await self._wait_response(bus, request_path)
         code, results = await future
         if code != 0:
             raise RuntimeError(
@@ -169,17 +168,18 @@ class PortalHotkey(Hotkey):
 
     async def _bind_shortcuts(self, bus, iface, Variant, session):
         token = f"great_sage_bind_{id(self)}"
-        request_path = self._request_path(bus, token)
-        future = await self._wait_response(bus, request_path)
         shortcuts = [{
             "id": "activate",
             "description": "Activate Great Sage",
-            "preferred_trigger": Variant("s", self.binding.replace(" ", "+")),
+            "preferred_trigger": Variant(
+                "s", self.binding.replace(" ", "+")
+            ),
         }]
-        await iface.call_bind_shortcuts(
+        request_path = await iface.call_bind_shortcuts(
             session, shortcuts, "",
             {"handle_token": Variant("s", token)}
         )
+        future = await self._wait_response(bus, request_path)
         code, results = await future
         if code != 0:
             raise RuntimeError(
