@@ -85,20 +85,42 @@ class LinuxWaylandLauncher(AppLauncher):
         _desktop_command(["xdg-open", value])
         return f"Opened {value}."
 
-    def capture_screen(self, output_path: str) -> str:
-        """Capture the Wayland desktop through KDE Spectacle."""
+    def capture_screen(self, output_path: str, region: str = "screen") -> str:
+        """Capture the Wayland desktop through KDE Spectacle synchronously."""
         path = str(Path(output_path).expanduser())
         Path(path).parent.mkdir(parents=True, exist_ok=True)
-        if not shutil.which("spectacle"):
+        spectacle = shutil.which("spectacle")
+        if not spectacle:
             raise RuntimeError(
                 "KDE Spectacle is not installed; Wayland screen capture is unavailable."
             )
-        _desktop_command([
-            "spectacle", "--background", "--nonotify",
-            "--fullscreen", "--output", path,
-        ])
-        if not Path(path).is_file():
-            raise RuntimeError("Spectacle did not create the screenshot.")
+
+        mode = (region or "screen").strip().lower()
+        capture_mode = "--activewindow" if mode in {"window", "focused", "active"} else "--fullscreen"
+        try:
+            result = subprocess.run(
+                [
+                    spectacle, "--background", "--nonotify",
+                    capture_mode, "--output", path,
+                ],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=20,
+                check=False,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError("Spectacle timed out while capturing the screen.") from exc
+
+        if result.returncode != 0:
+            detail = (result.stderr or "").strip()
+            raise RuntimeError(
+                "Spectacle failed to capture the screen%s"
+                % (f": {detail}" if detail else ".")
+            )
+        if not Path(path).is_file() or Path(path).stat().st_size == 0:
+            raise RuntimeError("Spectacle completed but did not create the screenshot.")
         return path
 
 
