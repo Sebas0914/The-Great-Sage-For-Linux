@@ -213,13 +213,14 @@ def build_provider(data, fallback):
     except Exception:
         mode = None
     routing = str(os.environ.get("GREAT_SAGE_AI_MODE", "nvidia_first")).lower()
-    if bool(data.get("local_only")) or bool(getattr(settings, "LOCAL_ONLY", False)) or (mode is not None and not mode.allow_online):
+    if bool(data.get("local_only")) or bool(getattr(_global_settings, "LOCAL_ONLY", False)) or (mode is not None and not mode.allow_online):
         return fallback, "Ollama / Local (local-only)"
     if routing == "local_only" or want == "local":
         return fallback, "Ollama / Local"
 
     try:
         from great_sage.config import settings
+        _global_settings = settings
         keys = data.get("keys") or {}
 
         if want == "nvidia":
