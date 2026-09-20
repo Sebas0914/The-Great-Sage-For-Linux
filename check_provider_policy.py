@@ -33,6 +33,19 @@ def run():
         else:
             os.environ["GREAT_SAGE_AI_MODE"] = old
 
+    # LOCAL_ONLY in the global settings is an independent hard stop.
+    from great_sage.config import settings
+    old_local_only = getattr(settings, "LOCAL_ONLY", False)
+    try:
+        settings.LOCAL_ONLY = True
+        configured = dict(ai_settings.DEFAULTS, mode="companion",
+                          chat_provider="nvidia", keys={"nvidia": "test-key"})
+        provider, label = ai_settings.build_provider(configured, fallback)
+        assert provider is fallback
+        assert "local-only" in label.lower()
+    finally:
+        settings.LOCAL_ONLY = old_local_only
+
     # A missing NVIDIA key must fail closed to the local provider.
     missing_key = dict(ai_settings.DEFAULTS, mode="companion",
                        chat_provider="nvidia", keys={})
