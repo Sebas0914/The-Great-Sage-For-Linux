@@ -22,5 +22,7 @@ jobs:
         run: python check_shaders.py
       - name: Validate routing
         run: python check_routing.py
+      - name: Validate NVIDIA model routing
+        run: python check_nvidia_routing.py
       - name: Validate Linux platform bridge
         run: python check_platform.py
