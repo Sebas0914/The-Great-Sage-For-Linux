@@ -1,0 +1,14 @@
+{
+  "KPlugin": {
+    "Name": "Great Sage Active Window Bridge",
+    "Description": "Reports the active KDE window to Great Sage over the session D-Bus.",
+    "Icon": "preferences-system-windows",
+    "Id": "great-sage-active-window",
+    "Version": "1.0",
+    "License": "MIT",
+    "Website": "https://github.com/Sebas0914/The-Great-Sage-For-Linux"
+  },
+  "X-Plasma-API": "javascript",
+  "X-Plasma-MainScript": "code/main.js",
+  "KPackageStructure": "KWin/Script"
+}
