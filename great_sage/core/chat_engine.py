@@ -4,6 +4,7 @@ it's given. Contains no provider-specific code, so it works unmodified
 no matter which AI backend is plugged in.
 """
 
+import json
 import time
 from typing import Callable, Iterator, List, Optional
 
@@ -239,9 +240,15 @@ class ChatEngine:
                 outgoing.append(message)
                 for call in calls:
                     fn = call.get("function") or {}
-                    name = fn.get("name") or "?"
+                    name = str(fn.get("name") or "?").strip()
+                    arguments = fn.get("arguments", "{}")
+                    if not isinstance(arguments, str):
+                        try:
+                            arguments = json.dumps(arguments)
+                        except (TypeError, ValueError):
+                            arguments = "{}"
                     try:
-                        result = run_tool(name, fn.get("arguments"))
+                        result = run_tool(name, arguments)
                     except Exception as exc:
                         result = "FAILED: %s" % exc
                     used.append((name, result))
@@ -249,9 +256,9 @@ class ChatEngine:
                     # Anthropic both match a result to the CALL that asked
                     # for it, and a mismatched id is a 400. Ollama ignores
                     # the field, so one shape serves all three.
+                    call_id = call.get("id") or "tool-%d-%d" % (_round, len(used))
                     outgoing.append({"role": "tool", "content": str(result),
-                                     "tool_name": name,
-                                     "tool_call_id": call.get("id")})
+                                     "tool_call_id": call_id})
                     # A tool may have produced an IMAGE - look_at_screen
                     # does. The tool interface stays text-only; the picture
                     # is collected here and attached to the follow-up call,
