@@ -64,6 +64,24 @@ def run():
     assert router.last_provider == "local-fallback"
     assert router.chat_raw(simple)["content"] == "local"
     assert list(router.stream_response(simple)) == ["local"]
+    # A streamed remote failure after visible text must not start a second
+    # answer from the local model.
+    class PartialFailure(Fake):
+        def stream_response(self, messages):
+            self.calls += 1
+            yield "partial"
+            raise ModelProviderError("dropped")
+
+    remote = PartialFailure("nvidia-partial")
+    local = Fake("local")
+    router = NvidiaRoutingProvider(remote, complex_provider, fallback=local)
+    try:
+        list(router.stream_response(simple))
+        raise AssertionError("expected ModelProviderError")
+    except ModelProviderError:
+        pass
+    assert local.calls == 0
+
     print("OK - NVIDIA routing and local fallback contract")
 
 
