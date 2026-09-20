@@ -29,11 +29,11 @@ from typing import Any, Dict
 log = logging.getLogger(__name__)
 
 # Providers Great Sage knows how to talk to. "local" needs no key.
-PROVIDERS = ("local", "anthropic", "openai")
+PROVIDERS = ("local", "nvidia", "nvidia_local", "anthropic", "openai")
 TTS_PROVIDERS = ("f5", "elevenlabs", "openai")
 
 DEFAULTS: Dict[str, Any] = {
-    "chat_provider": "local",
+    "chat_provider": "nvidia",
     "chat_model": "",
     "tts_provider": "f5",
     "keys": {},
@@ -47,6 +47,10 @@ DEFAULTS: Dict[str, Any] = {
     # Switch to GAMING by itself when a fullscreen game is detected, and
     # switch back afterwards (spec S38/S40, Phase 10).
     "auto_gaming": True,
+    "web_tools_enabled": False,
+    "local_only": False,
+    "nvidia_fast_model": "",
+    "nvidia_complex_model": "",
 }
 
 
@@ -136,10 +140,10 @@ def apply_update(data: Dict[str, Any], update: Dict[str, Any]) -> Dict[str, Any]
     would overwrite a real key with asterisks. Clearing is explicit, via
     clear_keys.
     """
-    for field in ("chat_provider", "chat_model", "tts_provider", "mode"):
+    for field in ("chat_provider", "chat_model", "tts_provider", "mode", "nvidia_fast_model", "nvidia_complex_model"):
         if field in update and isinstance(update[field], str):
             data[field] = update[field]
-    for field in ("allow_web", "allow_desktop", "auto_gaming"):
+    for field in ("allow_web", "allow_desktop", "auto_gaming", "web_tools_enabled", "local_only"):
         if field in update:
             data[field] = bool(update[field])
     incoming = update.get("keys")
@@ -170,40 +174,44 @@ def web_allowed(data) -> bool:
 
 
 def build_provider(data, fallback):
-    """The provider these settings ask for, or `fallback` if unavailable.
-
-    Never raises and never leaves Great Sage without a brain: a missing
-    key, an unknown provider name or a failed import all fall back to
-    the local model rather than breaking the app. The reason is logged,
-    because silently ignoring a selected provider would look like the
-    setting did nothing.
-    """
-    want = (data or {}).get("chat_provider") or "local"
-    from great_sage.core import modes as _modes
-    if not _modes.get((data or {}).get("mode")).allow_online and want != "local":
-        log.info("PRIVATE mode: staying on the local model rather than %r",
-                 want)
-        return fallback, "Ollama / Local (private)"
+    """Build the selected provider, enforcing local-only mode."""
+    data = data or {}
+    want = data.get("chat_provider") or "local"
+    if bool(data.get("local_only")):
+        return fallback, "Ollama / Local (local-only)"
     if want == "local":
         return fallback, "Ollama / Local"
-    key = ((data or {}).get("keys") or {}).get(want, "").strip()
-    if not key:
-        log.warning("Provider %r selected but no API key is set; "
-                    "staying on the local model", want)
-        return fallback, "Ollama / Local"
     try:
-        model = (data or {}).get("chat_model") or ""
+        from great_sage.config import settings
+        keys = data.get("keys") or {}
+        if want == "nvidia":
+            key = str(keys.get("nvidia", "")).strip()
+            if not key:
+                return fallback, "Ollama / Local (NVIDIA key missing)"
+            from great_sage.models.nvidia_provider import NvidiaProvider
+            model = data.get("nvidia_fast_model") or settings.NVIDIA_API_MODEL_FAST
+            return NvidiaProvider(
+                api_key=key, model=model,
+                base_url=settings.NVIDIA_API_BASE_URL,
+                timeout=settings.NVIDIA_API_TIMEOUT,
+            ), "NVIDIA API"
+        if want == "nvidia_local":
+            from great_sage.models.nvidia_provider import NvidiaProvider
+            model = data.get("nvidia_fast_model") or settings.NVIDIA_API_MODEL_FAST
+            base = os.environ.get("GREAT_SAGE_NIM_BASE_URL", "http://localhost:8000/v1")
+            return NvidiaProvider(api_key="", model=model, base_url=base,
+                                  timeout=settings.NVIDIA_API_TIMEOUT), "NVIDIA NIM / Local"
+        key = str(keys.get(want, "")).strip()
+        if not key:
+            return fallback, "Ollama / Local (provider key missing)"
+        model = data.get("chat_model") or ""
         if want == "anthropic":
             from great_sage.models.anthropic_provider import AnthropicProvider
-            return (AnthropicProvider(api_key=key, model=model),
-                    "Anthropic / Online")
+            return AnthropicProvider(api_key=key, model=model), "Anthropic / Online"
         if want == "openai":
             from great_sage.models.openai_provider import OpenAIProvider
-            return (OpenAIProvider(api_key=key, model=model),
-                    "OpenAI / Online")
+            return OpenAIProvider(api_key=key, model=model), "OpenAI / Online"
     except Exception:
-        # Deliberately no exception text: it can echo request details.
-        log.exception("Could not start the %r provider; staying local", want)
+        log.exception("Could not start provider %r; staying local", want)
         return fallback, "Ollama / Local"
-    log.warning("Provider %r is not implemented yet; staying local", want)
     return fallback, "Ollama / Local"
