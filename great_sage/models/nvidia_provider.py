@@ -78,6 +78,8 @@ class NvidiaProvider(ModelProvider):
             raise ModelProviderError(
                 f"NVIDIA did not respond within {self.timeout}s."
             ) from exc
+        except requests.exceptions.RequestException as exc:
+            raise ModelProviderError("NVIDIA request failed.") from exc
 
     @staticmethod
     def _http_error(response):
