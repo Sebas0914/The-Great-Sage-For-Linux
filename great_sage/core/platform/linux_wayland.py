@@ -128,7 +128,7 @@ class _KWinBridge:
                 super().__init__(owner.INTERFACE)
 
             @method()
-            def SetActiveWindow(self, title: "s", pid: "i") -> "":
+            def SetActiveWindow(self, title: "s", pid: "i") -> None:
                 owner.window_info.set_title(title)
                 owner.window_info.set_pid(pid)
 
@@ -303,9 +303,29 @@ class PortalHotkey(Hotkey):
         self.active = True
         if self._ready_event:
             self._ready_event.set()
-        await asyncio.get_running_loop().run_in_executor(
-            None, self._stop_event.wait
-        )
+        try:
+            await asyncio.get_running_loop().run_in_executor(
+                None, self._stop_event.wait
+            )
+        finally:
+            try:
+                session_intro = await bus.introspect(
+                    "org.freedesktop.portal.Desktop", self._session
+                )
+                session_proxy = bus.get_proxy_object(
+                    "org.freedesktop.portal.Desktop",
+                    self._session,
+                    session_intro,
+                )
+                session_iface = session_proxy.get_interface(
+                    "org.freedesktop.portal.Session"
+                )
+                await session_iface.call_close()
+            except Exception:
+                pass
+            self._session = None
+            self._bus = None
+            bus.disconnect()
 
     def _run(self):
         try:
