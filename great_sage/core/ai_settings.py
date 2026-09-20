@@ -1,22 +1,8 @@
-r"""API keys and provider choice for Chat Mode's AI settings.
+"""API keys and provider choice for Chat Mode's AI settings.
 
-Separate from hud_settings.py on purpose. That file holds display
-preferences and is harmless; this one holds SECRETS, and the two should
-never end up in the same place by accident.
-
-Where it lives (spec S67, "safe API-key storage/config"):
-
-  - in DATA_DIR, so %LOCALAPPDATA%\GreatSage in a build and the repo
-    folder from source - never inside the application bundle, which is
-    overwritten on every update
-  - gitignored, so a key cannot be committed by reflex
-  - written with the file permissions tightened to the current user on
-    Windows, so another account on the machine cannot read it
-
-Keys are never logged, never echoed back to the page in full, and never
-included in an error message. The page receives only a MASK (whether a
-key is set, and its last four characters) so the user can tell that a key
-is saved without the value being recoverable from the UI.
+Keys are stored outside the application bundle and are never returned in full
+to the UI. This module is platform-neutral; Windows ACL hardening is used only
+when available.
 """
 
 import json
@@ -28,7 +14,6 @@ from typing import Any, Dict
 
 log = logging.getLogger(__name__)
 
-# Providers Great Sage knows how to talk to. "local" needs no key.
 PROVIDERS = ("local", "nvidia", "nvidia_local", "anthropic", "openai")
 TTS_PROVIDERS = ("f5", "elevenlabs", "openai")
 
@@ -37,15 +22,9 @@ DEFAULTS: Dict[str, Any] = {
     "chat_model": "",
     "tts_provider": "f5",
     "keys": {},
-    # Tool permissions (spec S24). Off by default for anything that
-    # reaches outside this machine.
     "allow_web": False,
     "allow_desktop": True,
-    # Spec S39. What Great Sage is allowed to SPEND right now, and where
-    # data may go. See core/modes.py.
     "mode": "companion",
-    # Switch to GAMING by itself when a fullscreen game is detected, and
-    # switch back afterwards (spec S38/S40, Phase 10).
     "auto_gaming": True,
     "web_tools_enabled": False,
     "local_only": False,
@@ -55,17 +34,21 @@ DEFAULTS: Dict[str, Any] = {
 
 
 def _tighten(path: str) -> None:
-    """Restrict the file to the current user. Best effort, never fatal."""
+    """Restrict the file to the current user where Windows ACLs exist."""
+    if os.name != "nt":
+        return
     try:
         user = os.environ.get("USERNAME")
         if not user:
             return
-        subprocess.run(["icacls", path, "/inheritance:r",
-                        "/grant:r", "%s:F" % user],
-                       capture_output=True, timeout=10,
-                       creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        subprocess.run(
+            ["icacls", path, "/inheritance:r", "/grant:r", f"{user}:F"],
+            capture_output=True,
+            timeout=10,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
     except Exception:
-        log.debug("Could not tighten permissions on the key file")
+        log.debug("Could not tighten permissions on the key file", exc_info=True)
 
 
 def load(path: str) -> Dict[str, Any]:
@@ -75,15 +58,14 @@ def load(path: str) -> Dict[str, Any]:
         with open(path, "r", encoding="utf-8") as fh:
             stored = json.load(fh)
         if isinstance(stored, dict):
-            for k, v in stored.items():
-                if k in DEFAULTS:
-                    data[k] = v
+            for key, value in stored.items():
+                if key in DEFAULTS:
+                    data[key] = value
             if not isinstance(data.get("keys"), dict):
                 data["keys"] = {}
     except FileNotFoundError:
         pass
     except Exception:
-        # Never mention the file's CONTENTS in a log line - it holds keys.
         log.exception("AI settings unreadable; using defaults")
     return data
 
@@ -100,13 +82,12 @@ def save(path: str, data: Dict[str, Any]) -> None:
     except Exception:
         try:
             os.unlink(tmp)
-        except Exception:
+        except OSError:
             pass
         raise
 
 
 def mask(value: str) -> str:
-    """What the UI is allowed to see: set-or-not, and the last 4 chars."""
     v = (value or "").strip()
     if not v:
         return ""
@@ -114,14 +95,10 @@ def mask(value: str) -> str:
 
 
 def public_view(data: Dict[str, Any]) -> Dict[str, Any]:
-    """The settings, with every key replaced by a mask.
-
-    This is what goes over the WebSocket. A key that has been saved must
-    not be readable back out of the interface - only replaceable.
-    """
-    out = {k: v for k, v in data.items() if k != "keys"}
-    out["keys"] = {name: mask(val) for name, val in
-                   (data.get("keys") or {}).items()}
+    out = {key: value for key, value in data.items() if key != "keys"}
+    out["keys"] = {
+        name: mask(value) for name, value in (data.get("keys") or {}).items()
+    }
     out["providers"] = list(PROVIDERS)
     try:
         from great_sage.core import modes as _modes
@@ -133,77 +110,94 @@ def public_view(data: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def apply_update(data: Dict[str, Any], update: Dict[str, Any]) -> Dict[str, Any]:
-    """Merge a change from the page, ignoring anything unrecognised.
-
-    A blank key means "leave it alone", not "erase it": the page only ever
-    sends a mask for an existing key, and treating that as the new value
-    would overwrite a real key with asterisks. Clearing is explicit, via
-    clear_keys.
-    """
-    for field in ("chat_provider", "chat_model", "tts_provider", "mode", "nvidia_fast_model", "nvidia_complex_model"):
+    for field in (
+        "chat_provider", "chat_model", "tts_provider", "mode",
+        "nvidia_fast_model", "nvidia_complex_model",
+    ):
         if field in update and isinstance(update[field], str):
             data[field] = update[field]
-    for field in ("allow_web", "allow_desktop", "auto_gaming", "web_tools_enabled", "local_only"):
+
+    for field in (
+        "allow_web", "allow_desktop", "auto_gaming",
+        "web_tools_enabled", "local_only",
+    ):
         if field in update:
             data[field] = bool(update[field])
+
     incoming = update.get("keys")
     if isinstance(incoming, dict):
         keys = dict(data.get("keys") or {})
-        for name, val in incoming.items():
-            val = (val or "").strip()
-            if not val or set(val) <= {"*"} or val.startswith("*"):
-                continue          # a mask came back; the key is unchanged
-            keys[name] = val
+        for name, value in incoming.items():
+            value = (value or "").strip()
+            if not value or set(value) <= {"*"} or value.startswith("*"):
+                continue
+            keys[name] = value
         data["keys"] = keys
-    for name in (update.get("clear_keys") or []):
+
+    for name in update.get("clear_keys") or []:
         data.get("keys", {}).pop(name, None)
     return data
 
 
-def web_allowed(data) -> bool:
-    """The permission AND the mode both have to agree.
-
-    PRIVATE exists to be a single switch that guarantees nothing leaves
-    the machine (spec S66). If a checkbox left on could still let a tool
-    reach the network, the mode would be a label rather than a guarantee.
-    """
-    from great_sage.core import modes as _modes
+def web_allowed(data: Dict[str, Any]) -> bool:
+    """Require both explicit permission and a mode that permits web access."""
     if not (data or {}).get("allow_web"):
         return False
-    return _modes.get((data or {}).get("mode")).allow_web
+    try:
+        from great_sage.core import modes as _modes
+        return _modes.get((data or {}).get("mode")).allow_web
+    except Exception:
+        return False
 
 
 def build_provider(data, fallback):
     """Build the selected provider, enforcing local-only mode."""
     data = data or {}
     want = data.get("chat_provider") or "local"
+
     if bool(data.get("local_only")):
         return fallback, "Ollama / Local (local-only)"
     if want == "local":
         return fallback, "Ollama / Local"
+
     try:
         from great_sage.config import settings
         keys = data.get("keys") or {}
+
         if want == "nvidia":
             key = str(keys.get("nvidia", "")).strip()
             if not key:
                 return fallback, "Ollama / Local (NVIDIA key missing)"
             from great_sage.models.nvidia_provider import NvidiaProvider
-            model = data.get("nvidia_fast_model") or settings.NVIDIA_API_MODEL_FAST
+            model = (
+                data.get("nvidia_fast_model")
+                or settings.NVIDIA_API_MODEL_FAST
+            )
             return NvidiaProvider(
-                api_key=key, model=model,
+                api_key=key,
+                model=model,
                 base_url=settings.NVIDIA_API_BASE_URL,
                 timeout=settings.NVIDIA_API_TIMEOUT,
             ), "NVIDIA API"
+
         if want == "nvidia_local":
             from great_sage.models.nvidia_provider import NvidiaProvider
-            model = data.get("nvidia_fast_model") or settings.NVIDIA_API_MODEL_FAST
-            base = os.environ.get("GREAT_SAGE_NIM_BASE_URL", "http://localhost:8000/v1")
-            return NvidiaProvider(api_key="", model=model, base_url=base,
-                                  timeout=settings.NVIDIA_API_TIMEOUT), "NVIDIA NIM / Local"
+            model = (
+                data.get("nvidia_fast_model")
+                or settings.NVIDIA_API_MODEL_FAST
+            )
+            base = os.environ.get(
+                "GREAT_SAGE_NIM_BASE_URL", "http://localhost:8000/v1"
+            )
+            return NvidiaProvider(
+                api_key="", model=model, base_url=base,
+                timeout=settings.NVIDIA_API_TIMEOUT,
+            ), "NVIDIA NIM / Local"
+
         key = str(keys.get(want, "")).strip()
         if not key:
             return fallback, "Ollama / Local (provider key missing)"
+
         model = data.get("chat_model") or ""
         if want == "anthropic":
             from great_sage.models.anthropic_provider import AnthropicProvider
@@ -214,4 +208,5 @@ def build_provider(data, fallback):
     except Exception:
         log.exception("Could not start provider %r; staying local", want)
         return fallback, "Ollama / Local"
+
     return fallback, "Ollama / Local"
