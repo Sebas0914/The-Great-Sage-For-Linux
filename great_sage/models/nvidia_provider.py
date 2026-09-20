@@ -197,10 +197,16 @@ class NvidiaRoutingProvider(ModelProvider):
 
     def stream_response(self, messages: List[Message]) -> Iterator[str]:
         provider = self._select(messages)
+        emitted = False
         try:
-            yield from provider.stream_response(messages)
+            for piece in provider.stream_response(messages):
+                emitted = True
+                yield piece
         except ModelProviderError:
-            if self.fallback is None:
+            # Never splice a second answer onto a partially emitted NVIDIA
+            # response. A fallback is safe only when the remote call failed
+            # before producing any user-visible text.
+            if self.fallback is None or emitted:
                 raise
             self.last_provider = "local-fallback"
             yield from self.fallback.stream_response(messages)
@@ -209,10 +215,9 @@ class NvidiaRoutingProvider(ModelProvider):
         return self._call_with_fallback("chat_raw", messages, tools=tools)
 
     def get_available_models(self) -> List[str]:
-        models = []
-        for provider in (self.fast, self.complex):
-            try:
-                models.extend(provider.get_available_models())
-            except ModelProviderError:
-                continue
-        return list(dict.fromkeys(models))
+        # The configured IDs are already known. Avoid two startup network
+        # calls merely to rediscover the same models; callers that need live
+        # server discovery can query NvidiaProvider directly.
+        return list(dict.fromkeys(
+            model for model in (self.fast.model, self.complex.model) if model
+        ))
