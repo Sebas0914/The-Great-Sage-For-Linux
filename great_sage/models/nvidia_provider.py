@@ -201,12 +201,23 @@ class NvidiaRoutingProvider(ModelProvider):
         try:
             result = self.fast.chat_raw(
                 prompt, response_format={"type": "json_object"})
+        except ModelProviderError:
+            # Some OpenAI-compatible endpoints expose tool calling but not
+            # structured response_format. Retry the tiny classifier with the
+            # same provider and its JSON-only instruction instead of disabling
+            # IA1 classification entirely.
+            try:
+                result = self.fast.chat_raw(prompt)
+            except ModelProviderError:
+                self.last_classification = ""
+                return None
+        try:
             raw = result.get("content") or ""
             route = str(json.loads(raw).get("route", "")).strip().lower()
             if route in {"fast", "complex"}:
                 self.last_classification = route
                 return route == "complex"
-        except (ModelProviderError, ValueError, TypeError, AttributeError, KeyError):
+        except (ValueError, TypeError, AttributeError, KeyError):
             pass
         self.last_classification = ""
         return None
