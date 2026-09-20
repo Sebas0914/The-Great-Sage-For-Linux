@@ -12,8 +12,13 @@
 # separately and the model pulled once -
 #   https://ollama.com/download   then:  ollama pull qwen2.5:3b
 
-# --- Model provider -----------------------------------------------------
+# --- Core / platform ---------------------------------------------------
 requests>=2.31
+platformdirs>=4.0
+# Wayland global shortcuts via XDG portal; no keyboard hook fallback.
+dbus-fast>=2.20
+# X11 fallback only; unused on Wayland.
+python-xlib>=0.33
 
 # --- HUD app (run_hud.py): native window + its WebSocket bridge ---------
 websockets>=12.0
