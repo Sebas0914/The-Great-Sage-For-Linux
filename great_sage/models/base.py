@@ -15,7 +15,7 @@ from typing import Iterator, List, TypedDict
 
 class Message(TypedDict):
     """A single conversation turn, in the shape most chat APIs expect."""
-    role: str  # "system" | "user" | "assistant"
+    role: str  # "system" | "user" | "assistant" | "tool"
     content: str
 
 
@@ -46,6 +46,14 @@ class ModelProvider(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    def chat_raw(self, messages: List[Message], tools=None, response_format=None):
+        """Return a raw assistant message for tool/structured-output flows.
+
+        Providers that support native tool calling should override this.
+        The default keeps older providers compatible with ChatEngine callers.
+        """
+        raise ModelProviderError("This provider does not support tool calls.")
+
     def get_available_models(self) -> List[str]:
         """Return the names of models this provider currently has available.
 
