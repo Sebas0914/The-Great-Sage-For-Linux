@@ -26,5 +26,7 @@ jobs:
         run: python check_nvidia_routing.py
       - name: Validate ChatEngine tool-call shape
         run: python check_chat_engine.py
+      - name: Validate provider privacy and routing policy
+        run: python check_provider_policy.py
       - name: Validate Linux platform bridge
         run: python check_platform.py
