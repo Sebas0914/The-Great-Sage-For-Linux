@@ -503,6 +503,34 @@ def _capture(region: str = "") -> str:
                 box = (r.l, r.t, r.r, r.b)
         except Exception:
             box = None          # fall back to the whole desktop
+    if os.name != "nt" and os.environ.get("XDG_SESSION_TYPE", "").lower() == "wayland":
+        try:
+            from great_sage.core.platform.factory import get_platform
+            platform = get_platform()
+            capture = getattr(platform.launcher, "capture_screen", None)
+            if capture is None:
+                raise ToolError("Wayland screen capture is not available on this platform.")
+            import tempfile
+            with tempfile.TemporaryDirectory(prefix="great-sage-shot-") as tmp:
+                raw_path = os.path.join(tmp, "capture.png")
+                capture(raw_path, region=region)
+                from PIL import Image
+                img = Image.open(raw_path).convert("RGB")
+                img.thumbnail((1280, 1280))
+                import base64
+                import io as _io
+                buf = _io.BytesIO()
+                img.save(buf, format="JPEG", quality=82)
+                _PENDING_IMAGES.append(base64.b64encode(buf.getvalue()).decode())
+                what = "the focused window" if region.strip().lower() in ("window", "focused", "active") else "the whole screen"
+                return ("Captured %s (%dx%d), showing %r. The image is attached to this "
+                        "turn - describe what is actually visible in it."
+                        % (what, img.size[0], img.size[1], _focused_window()))
+        except ToolError:
+            raise
+        except Exception as exc:
+            raise ToolError("Could not capture the Wayland screen: %s" % exc) from exc
+
     try:
         img = ImageGrab.grab(bbox=box)
     except Exception as exc:
