@@ -631,12 +631,21 @@ def main() -> int:
     _configure_logging()
     logging.getLogger(__name__).info("Starting Great Sage HUD")
 
-    provider = OllamaProvider(
+    fallback = OllamaProvider(
         host=settings.OLLAMA_HOST,
         model=settings.OLLAMA_DEFAULT_MODEL,
         timeout=settings.REQUEST_TIMEOUT_SECONDS,
         think=settings.OLLAMA_THINK,
     )
+    try:
+        from great_sage.core import ai_settings
+        config = ai_settings.load(settings.AI_SETTINGS_PATH)
+        provider, provider_label = ai_settings.build_provider(config, fallback)
+        logging.getLogger(__name__).info("Selected model provider: %s", provider_label)
+    except Exception as exc:
+        logging.getLogger(__name__).exception("Provider setup failed; using local fallback")
+        provider = fallback
+
     try:
         provider.get_available_models()
     except ModelProviderError as exc:
