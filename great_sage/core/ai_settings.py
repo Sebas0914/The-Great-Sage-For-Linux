@@ -155,9 +155,17 @@ def build_provider(data, fallback):
     data = data or {}
     want = data.get("chat_provider") or "local"
 
-    if bool(data.get("local_only")):
+    # Privacy and routing policy are enforced here, at provider construction,
+    # rather than relying on the UI to keep the mode and provider in sync.
+    try:
+        from great_sage.core import modes as _modes
+        mode = _modes.get(data.get("mode"))
+    except Exception:
+        mode = None
+    routing = str(os.environ.get("GREAT_SAGE_AI_MODE", "nvidia_first")).lower()
+    if bool(data.get("local_only")) or (mode is not None and not mode.allow_online):
         return fallback, "Ollama / Local (local-only)"
-    if want == "local":
+    if routing == "local_only" or routing == "local_first" or want == "local":
         return fallback, "Ollama / Local"
 
     try:
