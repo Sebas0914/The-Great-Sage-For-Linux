@@ -17,6 +17,11 @@ def main():
     for path in PYTHON_FILES:
         ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
 
+    factory = (ROOT / "great_sage/core/platform/factory.py").read_text(encoding="utf-8")
+    assert "_PLATFORM = None" in factory
+    assert "_PLATFORM_KIND = None" in factory
+    assert "if _PLATFORM is None or _PLATFORM_KIND != kind:" in factory
+
     metadata = json.loads(KWIN_METADATA.read_text(encoding="utf-8"))
     plugin = metadata.get("KPlugin", {})
     assert plugin.get("Id") == "great-sage-active-window"
