@@ -10,10 +10,8 @@ import os
 import sys
 
 # --- Provider selection -----------------------------------------------
-# Only "ollama" exists today. This string is read by main.py to decide
-# which ModelProvider implementation to construct. Adding "openai" or
-# "anthropic" later just means adding a branch there and a new
-# provider class in models/ - nothing else in the app needs to change.
+# NVIDIA is the preferred remote provider. Provider construction and local
+# fallback live in core/ai_settings.py so application code stays provider-neutral.
 ACTIVE_PROVIDER = os.environ.get("GREAT_SAGE_PROVIDER", "nvidia")
 AI_ROUTING_MODE = os.environ.get("GREAT_SAGE_AI_MODE", "nvidia_first").lower()
 NVIDIA_API_BASE_URL = os.environ.get("GREAT_SAGE_NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1")
