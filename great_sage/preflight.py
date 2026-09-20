@@ -73,6 +73,7 @@ def check_ollama_installed() -> Requirement:
         fix_url=OLLAMA_DOWNLOAD,
         fix_hint="Download and run the installer, then come back and re-check.",
         size_hint="~700 MB",
+        blocking=bool(getattr(settings, "LOCAL_ONLY", False)),
     )
 
 
@@ -91,8 +92,8 @@ def check_ollama_running() -> Requirement:
     return Requirement(
         key="ollama_running", label="Ollama service", ok=reachable, detail=detail,
         fix_command=["ollama", "serve"],
-        fix_hint="Ollama normally starts with Windows. Launch it once by hand "
-                 "if this stays red.",
+        fix_hint="Start Ollama only if a local provider is selected.",
+        blocking=bool(getattr(settings, "LOCAL_ONLY", False)),
     )
 
 
@@ -117,6 +118,7 @@ def check_model() -> Requirement:
         fix_command=["ollama", "pull", want],
         fix_hint="Downloads once, then works offline.",
         size_hint="~1.9 GB",
+        blocking=bool(getattr(settings, "LOCAL_ONLY", False)),
     )
 
 
