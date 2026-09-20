@@ -149,9 +149,11 @@ class PortalHotkey(Hotkey):
             }
             result = await iface.call_create_session(options)
             self._session = result
+            trigger = self.binding.replace(" ", "+")
             shortcuts = [{
                 "id": "activate",
                 "description": "Activate Great Sage",
+                "preferred_trigger": Variant("s", trigger),
             }]
             # The portal's BindShortcuts request takes a parent window handle
             # followed by shortcut definitions and options. An empty parent is
