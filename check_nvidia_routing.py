@@ -44,6 +44,18 @@ def run():
     classifier_fast = ClassifyingFast("fast")
     classifier_complex = Fake("complex")
     classified_router = NvidiaRoutingProvider(classifier_fast, classifier_complex)
+
+    class FormatLimitedFast(Fake):
+        def chat_raw(self, messages, tools=None, response_format=None):
+            self.calls += 1
+            if response_format:
+                from great_sage.models.base import ModelProviderError
+                raise ModelProviderError("response_format unsupported")
+            return {"content": '{"route":"fast"}'}
+
+    limited_router = NvidiaRoutingProvider(FormatLimitedFast("fast"), Fake("complex"))
+    assert limited_router._classify(ambiguous[0]["content"]) is False
+    assert limited_router.last_classification == "fast"
     assert classified_router._classify(ambiguous[0]["content"]) is True
     assert classified_router.last_classification == "complex"
     assert classified_router.send_message(ambiguous) == "complex"
