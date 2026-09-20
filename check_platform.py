@@ -25,6 +25,8 @@ def main():
     assert metadata.get("X-Plasma-MainScript") == "code/main.js"
 
     script = KWIN_SCRIPT.read_text(encoding="utf-8")
+    assert "setInterval" in script
+    assert "clearInterval" in script
     required = (
         "workspace.activeWindow",
         "workspace.windowActivated",
