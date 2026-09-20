@@ -211,7 +211,7 @@ class ChatEngine:
             outgoing.append({"role": "assistant", "content": "",
                              "tool_calls": [{"id": call_id, "type": "function",
                                              "function": {"name": name,
-                                                          "arguments": {}}}]})
+                                                          "arguments": "{}"}}}]})
             outgoing.append({"role": "tool", "content": str(result),
                              "tool_name": name, "tool_call_id": call_id})
         if preroute_results:
