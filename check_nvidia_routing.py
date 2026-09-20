@@ -13,7 +13,7 @@ class Fake(NvidiaProvider):
     def stream_response(self, messages):
         self.calls += 1
         yield self.model
-    def chat_raw(self, messages, tools=None):
+    def chat_raw(self, messages, tools=None, response_format=None):
         self.calls += 1
         return {"content": self.model}
     def get_available_models(self):
