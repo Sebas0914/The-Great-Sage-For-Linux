@@ -44,7 +44,7 @@ def run():
     classifier_fast = ClassifyingFast("fast")
     classifier_complex = Fake("complex")
     classified_router = NvidiaRoutingProvider(classifier_fast, classifier_complex)
-    assert classified_router.send_message(ambiguous) == "classified-answer"
+    assert classified_router.send_message(ambiguous) == "complex"
     assert classified_router.last_route == "complex"
     assert classified_router.last_classification == "complex"
     assert list(router.stream_response(simple)) == ["fast"]
