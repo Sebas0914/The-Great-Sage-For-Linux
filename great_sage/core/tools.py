@@ -593,7 +593,10 @@ def _web_allowed() -> bool:
     try:
         from great_sage.config import settings as _s
         from great_sage.core import ai_settings as _ai
-        return _ai.web_allowed(_ai.load(_s.AI_SETTINGS_PATH))
+        config = _ai.load(_s.AI_SETTINGS_PATH)
+        if not config.get("web_tools_enabled", False):
+            return False
+        return _ai.web_allowed(config)
     except Exception:
         return False
 
