@@ -103,7 +103,7 @@ class OpenAIProvider(ModelProvider):
             raise ModelProviderError(
                 "OpenAI returned an unexpected response format.") from exc
 
-    def chat_raw(self, messages, tools=None):
+    def chat_raw(self, messages, tools=None, response_format=None):
         """Ollama-shaped message dict, so the tool loop needs no changes."""
         body = {"model": self.model, "messages": self._convert(messages)}
         if tools:
