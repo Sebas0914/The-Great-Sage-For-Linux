@@ -3,6 +3,7 @@
 Uses XDG GlobalShortcuts for global hotkeys and a small KWin bridge for
 focused-window information. No global keyboard hooks are used on Wayland.
 """
+
 import asyncio
 import os
 import subprocess
@@ -89,8 +90,6 @@ class LinuxWaylandWindowInfo(WindowInfo):
         self._title = None
 
     def focused_window_title(self) -> Optional[str]:
-        # The KWin bridge is intentionally optional. If it is not active,
-        # callers receive None rather than pretending to know the window.
         return self._title
 
     def set_title(self, title: Optional[str]):
@@ -108,8 +107,9 @@ class LinuxWaylandDataPaths(DataPaths):
 class PortalHotkey(Hotkey):
     """XDG GlobalShortcuts portal adapter.
 
-    The portal owns the actual global shortcut registration. This class keeps
-    the D-Bus work on its own event loop thread so the GUI remains responsive.
+    Portal requests return Request object paths. Their actual results arrive
+    through org.freedesktop.portal.Request::Response; the request handle is
+    never treated as the session handle.
     """
 
     def __init__(self, binding="", on_press=None, on_release=None):
@@ -117,78 +117,128 @@ class PortalHotkey(Hotkey):
         self.on_press = on_press
         self.on_release = on_release
         self.active = False
-        self._loop = None
         self._thread = None
         self._stop_event = None
         self._session = None
+        self._error = None
 
-    def _run(self):
-        try:
-            from dbus_fast.aio import MessageBus
-            from dbus_fast import Variant
-        except ImportError as exc:
-            raise RuntimeError("dbus-fast is required for Wayland global shortcuts.") from exc
+    @staticmethod
+    def _request_path(bus, token: str) -> str:
+        sender = (bus.unique_name or "").lstrip(":").replace(".", "_")
+        return f"/org/freedesktop/portal/desktop/request/{sender}/{token}"
 
-        async def worker():
-            bus = await MessageBus().connect()
-            intro = await bus.introspect(
-                "org.freedesktop.portal.Desktop",
-                "/org/freedesktop/portal/desktop",
+    async def _wait_response(self, bus, request_path):
+        intro = await bus.introspect(
+            "org.freedesktop.portal.Desktop", request_path
+        )
+        proxy = bus.get_proxy_object(
+            "org.freedesktop.portal.Desktop", request_path, intro
+        )
+        iface = proxy.get_interface("org.freedesktop.portal.Request")
+        loop = asyncio.get_running_loop()
+        future = loop.create_future()
+
+        def response(code, results):
+            if not future.done():
+                future.set_result((code, results))
+
+        iface.on_response(response)
+        return future
+
+    async def _create_session(self, bus, iface, Variant):
+        token = f"great_sage_{id(self)}"
+        request_path = self._request_path(bus, token)
+        future = await self._wait_response(bus, request_path)
+        await iface.call_create_session({
+            "handle_token": Variant("s", token),
+            "session_handle_token": Variant(
+                "s", f"great_sage_session_{id(self)}"
+            ),
+        })
+        code, results = await future
+        if code != 0:
+            raise RuntimeError(
+                f"Global shortcut session request failed with response {code}."
             )
-            proxy = bus.get_proxy_object(
-                "org.freedesktop.portal.Desktop",
-                "/org/freedesktop/portal/desktop",
-                intro,
+        session = results.get("session_handle")
+        if not session:
+            raise RuntimeError(
+                "Global shortcut portal returned no session handle."
             )
-            iface = proxy.get_interface("org.freedesktop.portal.GlobalShortcuts")
+        return session
 
-            handle = f"/com/greatsage/GlobalShortcuts/{id(self)}"
-            options = {
-                "handle_token": Variant("s", f"great_sage_{id(self)}"),
-                "session_handle_token": Variant("s", f"great_sage_session_{id(self)}"),
-            }
-            result = await iface.call_create_session(options)
-            # The portal returns a response object path. A real session handle
-            # is delivered by the Response::Response signal in the portal
-            # protocol; implementations commonly expose it as the result of
-            # this D-Bus call in dbus-fast.
-            self._session = result
-            trigger = self.binding.replace(" ", "+")
-            shortcuts = [{
-                "id": "activate",
-                "description": "Activate Great Sage",
-                "preferred_trigger": Variant("s", trigger),
-            }]
-            # The portal's BindShortcuts request takes a parent window handle
-            # followed by shortcut definitions and options. An empty parent is
-            # valid for a desktop background utility.
-            await iface.call_bind_shortcuts(self._session, shortcuts, "", {})
-            self.active = True
+    async def _bind_shortcuts(self, bus, iface, Variant, session):
+        token = f"great_sage_bind_{id(self)}"
+        request_path = self._request_path(bus, token)
+        future = await self._wait_response(bus, request_path)
+        shortcuts = [{
+            "id": "activate",
+            "description": "Activate Great Sage",
+            "preferred_trigger": Variant("s", self.binding.replace(" ", "+")),
+        }]
+        await iface.call_bind_shortcuts(
+            session, shortcuts, "",
+            {"handle_token": Variant("s", token)}
+        )
+        code, results = await future
+        if code != 0:
+            raise RuntimeError(
+                f"Global shortcut binding request failed with response {code}."
+            )
+        return results
 
-            def activated(session_handle, shortcut_id, timestamp, options):
-                if session_handle != self._session or shortcut_id != "activate":
-                    return
+    async def _worker(self):
+        from dbus_fast import Variant
+        from dbus_fast.aio import MessageBus
+
+        bus = await MessageBus().connect()
+        intro = await bus.introspect(
+            "org.freedesktop.portal.Desktop",
+            "/org/freedesktop/portal/desktop",
+        )
+        proxy = bus.get_proxy_object(
+            "org.freedesktop.portal.Desktop",
+            "/org/freedesktop/portal/desktop",
+            intro,
+        )
+        iface = proxy.get_interface("org.freedesktop.portal.GlobalShortcuts")
+
+        self._session = await self._create_session(bus, iface, Variant)
+        await self._bind_shortcuts(bus, iface, Variant, self._session)
+
+        def activated(session_handle, shortcut_id, timestamp, options):
+            if session_handle == self._session and shortcut_id == "activate":
                 if self.on_press:
                     self.on_press()
 
-            def deactivated(session_handle, shortcut_id, timestamp, options):
-                if session_handle != self._session or shortcut_id != "activate":
-                    return
+        def deactivated(session_handle, shortcut_id, timestamp, options):
+            if session_handle == self._session and shortcut_id == "activate":
                 if self.on_release:
                     self.on_release()
 
-            iface.on_activated(activated)
-            iface.on_deactivated(deactivated)
-            await asyncio.get_running_loop().run_in_executor(None, self._stop_event.wait)
+        iface.on_activated(activated)
+        iface.on_deactivated(deactivated)
+        self.active = True
+        await asyncio.get_running_loop().run_in_executor(
+            None, self._stop_event.wait
+        )
 
-        asyncio.run(worker())
+    def _run(self):
+        try:
+            asyncio.run(self._worker())
+        except Exception as exc:
+            self.active = False
+            self._error = exc
 
     def start(self) -> bool:
         if self.active:
             return True
         import threading
+        self._error = None
         self._stop_event = threading.Event()
-        self._thread = threading.Thread(target=self._run, daemon=True, name="great-sage-shortcuts")
+        self._thread = threading.Thread(
+            target=self._run, daemon=True, name="great-sage-shortcuts"
+        )
         self._thread.start()
         return True
 
