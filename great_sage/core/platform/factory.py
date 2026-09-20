@@ -16,7 +16,7 @@ def get_platform(binding="", on_press=None, on_release=None):
         if _PLATFORM is None or _PLATFORM_KIND != kind:
             from .windows import WindowsPlatform
             from great_sage.core.global_hotkey import GlobalHotkey
-            hotkey = GlobalHotkey(binding, None, None)
+            hotkey = GlobalHotkey(binding, on_press, on_release)
             _PLATFORM = WindowsPlatform(hotkey)
             _PLATFORM_KIND = kind
     else:
