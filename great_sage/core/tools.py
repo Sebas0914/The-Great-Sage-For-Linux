@@ -1199,7 +1199,7 @@ _TRIGGERS = _TRIGGERS + (
 )
 
 def _web_tools_allowed() -> bool:
-    """Network-facing desktop tools require an explicit opt-in."""
+    """Network-facing tools require an explicit opt-in and never run in local-only mode."""
     try:
         from great_sage.config import settings
         if getattr(settings, "LOCAL_ONLY", False):
@@ -1209,7 +1209,7 @@ def _web_tools_allowed() -> bool:
         return False
 
 
-WEB_TOOL_NAMES = frozenset({"open_url", "open_youtube"})
+WEB_TOOL_NAMES = frozenset({"open_url", "open_youtube", "web_search", "web_fetch"})
 
 
 
