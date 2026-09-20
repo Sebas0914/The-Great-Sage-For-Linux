@@ -1,6 +1,3 @@
-        if os.name != "nt":
-            log.info("Overlay host is not enabled on Linux; keeping native HUD window")
-            return False
 """
 Great Sage HUD - native app entry point.
 
@@ -526,6 +523,10 @@ class _HudHostApi:
         stack that already works: if the overlay host fails, the app it
         was launched from is untouched.
         """
+        if os.name != "nt":
+            log.info("Overlay host is not enabled on Linux; keeping native HUD window")
+            return False
+
         import subprocess
         win = self._window
         if win is None:
