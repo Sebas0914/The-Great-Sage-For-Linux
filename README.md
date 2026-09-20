@@ -1,168 +1,120 @@
 # Great Sage
 
-A local-first Windows desktop AI companion, built around a 3D HUD rather
-than a chat window. Everything runs on your machine: the model, the
-speech recognition, and the voice.
+A Linux-first desktop AI companion with a 3D HUD, local voice pipeline, explicit tools, and a provider-neutral model layer.
 
-- **Talk to it.** Hold one key from anywhere - including inside a game -
-  say what you want, let go. Transcribed locally with faster-whisper.
-- **It answers in a cloned voice**, synthesised locally with F5-TTS.
-- **It does things.** Opens pages, launches applications, opens folders,
-  searches the web and YouTube, reads your screen, reports free VRAM and
-  disk, sets reminders.
-- **A HUD, not a text box.** A Three.js scene that reacts to speech and
-  to what it is doing, with a compact always-on-top overlay mode that
-  clicks straight through to whatever is behind it.
+## Current platform support
 
-Named for the skill in *That Time I Got Reincarnated as a Slime*, and it
-addresses you as Master.
+- **Linux / KDE Plasma / Wayland:** platform adapter, XDG GlobalShortcuts hotkey integration, KWin active-window bridge, application/path/URL launching, and KDE Spectacle screen capture.
+- **Linux / X11:** platform adapter, configurable X11 global shortcut, active-window detection, and the same safe launcher interface.
+- **Windows:** the existing Windows platform implementation remains available; Linux work is isolated behind the platform abstraction.
 
-## What you need
+The application does **not** use a system-wide keylogger-style keyboard hook on Wayland. Global shortcuts use the desktop's GlobalShortcuts portal.
 
-| | |
+## Model architecture
+
+Great Sage separates the model roles:
+
+- **IA1 — fast:** ordinary conversation, simple explanations, straightforward actions, and routing decisions.
+- **IA2 — complex:** substantial programming/debugging, project analysis, architecture, multi-step reasoning, and long synthesis.
+
+With NVIDIA enabled, ambiguous requests are first classified by IA1 and then sent to the selected model. Clearly complex requests can go directly to IA2, while clearly simple requests can go directly to IA1.
+
+### Provider modes
+
+| Mode | Behavior |
 |---|---|
-| Windows | 10 or 11 |
-| [Ollama](https://ollama.com/download) | running locally, with `ollama pull qwen3.5:4b` |
-| Python 3.14 | the app itself |
-| Python 3.11 | a second venv, for the overlay window only |
-| NVIDIA GPU | not required, but F5-TTS is too slow to speak in real time on CPU. Developed on a 3060 (12GB) |
+| **NVIDIA_FIRST** | NVIDIA hosted API first; local provider is the fallback. |
+| **LOCAL_FIRST** | Local provider first; NVIDIA is used only if the local provider fails before producing output. |
+| **LOCAL_ONLY** | No remote AI provider is used. |
 
-The two Python versions are not a mistake. The transparent overlay needs
-PySide6 6.4.3, which has no build for 3.14; newer Qt flickers through
-ANGLE on a translucent always-on-top window. So the overlay is a separate
-process on 3.11 and the main app runs on 3.14. See `NOTES.md`.
+The global `GREAT_SAGE_LOCAL_ONLY=true` setting is a hard privacy stop.
+
+## Tools and privacy
+
+Tools are explicit and validated before execution. The model never receives an unrestricted shell.
+
+Web tools are **disabled by default** and require both:
+
+1. the global web-tools setting, and
+2. permission from the active AI mode/settings.
+
+`LOCAL_ONLY` always disables web tools.
+
+Desktop tools use platform adapters rather than embedding Windows-only APIs in the core. On Linux, application launching is resolved through installed `.desktop` entries and paths/URLs are opened through the desktop's standard launchers.
+
+## Voice pipeline
+
+The intended local voice path is:
+
+`speech -> faster-whisper -> Great Sage -> F5-TTS`
+
+Speech recognition is local. F5-TTS is local and GPU acceleration is preferred.
 
 ## Install
 
-**[Full step-by-step guide, with troubleshooting -> INSTALL.md](INSTALL.md)**
-Start there if anything goes wrong, particularly if it replies in text but
-never speaks.
+Start with `INSTALL.md` for the complete setup and troubleshooting guide.
 
-The short version:
+Typical Linux setup:
 
 ```bash
-git clone https://github.com/shogunyan12/The-GREAT-SAGE.git
-cd The-GREAT-SAGE
+git clone https://github.com/Sebas0914/The-Great-Sage-For-Linux.git
+cd The-Great-Sage-For-Linux
 
-# torch FIRST, with the CUDA build for your GPU - otherwise pip resolves
-# the CPU build and the voice is unusably slow. Check yours with nvidia-smi.
-pip install torch --index-url https://download.pytorch.org/whl/cu121
+python3 -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip
 pip install -r requirements.txt
-
-# The overlay's own environment
-py -3.11 -m venv .overlay-venv
-.overlay-venv\Scripts\pip install PySide6==6.4.3
-
-ollama pull qwen3.5:4b
 ```
 
-## Run
+For NVIDIA-hosted AI, configure the NVIDIA API key through Chat Mode settings or the supported configuration mechanism. For fully local operation, configure the local provider and use `LOCAL_ONLY`.
 
-```bash
-py app.py
-```
-
-First launch downloads the F5-TTS and faster-whisper models (a few GB,
-once). After that it is fully offline apart from web search and anything
-you ask it to fetch.
-
-## Use
-
-| | |
-|---|---|
-| **Alt+1** | hold to talk, release to send. Works from any window |
-| **Click the core** | opens the radial menu: settings, chat, logs, overlay |
-| **F1** | shows and hides the developer chrome |
-| **Esc** | closes whatever is open |
-
-Say things like *"what time is it"*, *"open spotify"*, *"search the web
-for..."*, *"search on youtube for X and play the first video"*, *"look at
-my screen"*. Requests to DO something are carried out and not narrated -
-it opens the thing and says nothing.
-
-## Build a standalone exe
-
-```bash
-py build.py
-```
-
-Produces `dist/GreatSage/` (about 5.5 GB - it carries torch, F5-TTS and
-Whisper) and puts a shortcut on your Desktop. Two bundles are built and
-merged: the app on 3.14 and the overlay on 3.11.
-
-The build runs three checks first and refuses to package if any fail:
-
-```bash
-py check_js.py         # the inline HUD script parses at all
-py check_shaders.py    # GLSL template literals are balanced
-py check_routing.py    # asking it to do something actually does it
-```
-
-`check_routing.py` is the important one. The failure it guards against is
-not a crash - it is Great Sage confidently answering "I cannot do that"
-to something it can do. Several cases in it are transcripts of real
-requests that were refused.
-
-## Configuration
-
-`great_sage/config/settings.py` holds everything tunable: the model, the
-system prompt, voice engine and speed, the global hotkey. Most of it is
-also reachable from the settings panel in the app, which is the better
-place to change it.
-
-Your data - conversations, memories, API keys, settings - is written
-beside the exe (or in the project folder when run from source) and is
-never committed.
+No API key is stored in the repository.
 
 ## Project layout
 
 ```
-app.py                  entry point; checks prerequisites, then the HUD
-run_hud.py              the native window and the WebSocket bridge
-overlay_window.py       the transparent overlay + settings/history windows
-hud_prototype.html      the entire HUD: Three.js scene, chat, settings
-build.py                two-bundle PyInstaller build
-check_*.py              the gates the build will not ship without
-
 great_sage/
-  config/settings.py    every tunable value
-  models/               ModelProvider interface + Ollama, OpenAI, Anthropic
+  config/
+    settings.py       central configuration
   core/
-    chat_engine.py      conversation, tool loop
-    tools.py            the 16 tools, and the deterministic pre-routing
-    memory*.py          long-term memory
-    state.py            internal state that shapes replies
-    autonomy.py         scheduled tasks and folder watching
+    chat_engine.py    conversation and tool loop
+    tools.py          explicit tools and deterministic pre-routing
+    ai_settings.py    provider selection, routing, privacy policy
+    platform/         Linux/Windows desktop abstraction
+  models/
+    base.py            provider interface
+    nvidia_provider.py NVIDIA fast/complex routing
+    ollama_provider.py local provider
   voice/
-    f5_tts_engine.py    cloned-voice synthesis
-    speech_to_text.py   faster-whisper
-assets/sfx/             interface sounds
-voice_samples/          the voices Great Sage speaks with
+    speech_to_text.py local faster-whisper STT
+    f5_tts_engine.py  local F5-TTS output
+
+check_*.py             CI regression/contract checks
+.github/workflows/      Linux CI
 ```
 
-`NOTES.md` has the history and the environment quirks. Read it before
-touching `voice/` or `config/settings.py` - most of what looks like an
-odd choice in there is load-bearing and the reason is written down.
+## Validation
+
+The repository contains focused contract checks for:
+
+- Python compilation.
+- HUD JavaScript and shaders.
+- deterministic tool routing.
+- NVIDIA fast/complex routing and local fallback.
+- ChatEngine tool-call message shape.
+- provider privacy/routing policy.
+- Linux platform and KDE KWin bridge contracts.
+
+CI runs these checks on the Linux development branch and pull requests.
 
 ## Known limitations
 
-- **Windows only.** The overlay, the global hotkey and the window
-  handling are all Win32.
-- **The model is small.** qwen3.5:4b was chosen to leave GPU headroom for
-  gaming while it runs. It is not reliable at deciding to use a tool,
-  which is why the requests that matter are pre-routed deterministically
-  rather than left to it.
-- **First launch is slow** and needs the network, for the model
-  downloads.
-- **No test suite for the Python core.** The three checks above cover the
-  HUD script and the routing table; the rest is verified by running it.
-- **Image generation is not implemented**, deliberately.
+- A real KDE Wayland session is required to validate the desktop integrations end-to-end; CI validates their contracts but cannot reproduce the user's desktop session.
+- Screen capture depends on KDE Spectacle being available.
+- NVIDIA-hosted AI requires an API key and network access.
+- F5-TTS and faster-whisper have substantial model/runtime dependencies.
+- Image generation is not implemented.
 
-## Credits
+## License and assets
 
-The pre-recorded voice lines under `voice_lines/` are audio from *That
-Time I Got Reincarnated as a Slime*, used here for a personal companion
-project. They are not mine and are included for that purpose only.
-# The-Great-Sage-For-Linux
-# The-Great-Sage-For-Linux
-# The-Great-Sage-For-Linux
+Check the repository's license and asset-specific documentation before redistributing voice recordings or other third-party media. Pre-recorded character voice lines are not treated as original project code.
