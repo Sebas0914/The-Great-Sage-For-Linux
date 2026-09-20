@@ -157,10 +157,23 @@ class NvidiaRoutingProvider(ModelProvider):
         "document", "documento", "long context", "why does", "por qué",
     )
 
-    def __init__(self, fast: NvidiaProvider, complex_provider: NvidiaProvider):
+    def __init__(self, fast: NvidiaProvider, complex_provider: NvidiaProvider,
+                 fallback: ModelProvider = None):
         self.fast = fast
         self.complex = complex_provider
+        self.fallback = fallback
         self.last_route = "fast"
+        self.last_provider = "nvidia"
+
+    def _call_with_fallback(self, method, *args, **kwargs):
+        provider = self._select(args[0])
+        try:
+            return getattr(provider, method)(*args, **kwargs)
+        except ModelProviderError:
+            if self.fallback is None:
+                raise
+            self.last_provider = "local-fallback"
+            return getattr(self.fallback, method)(*args, **kwargs)
 
     @classmethod
     def _looks_complex(cls, messages) -> bool:
@@ -176,16 +189,24 @@ class NvidiaRoutingProvider(ModelProvider):
     def _select(self, messages):
         provider = self.complex if self._looks_complex(messages) else self.fast
         self.last_route = "complex" if provider is self.complex else "fast"
+        self.last_provider = "nvidia"
         return provider
 
     def send_message(self, messages: List[Message]) -> str:
-        return self._select(messages).send_message(messages)
+        return self._call_with_fallback("send_message", messages)
 
     def stream_response(self, messages: List[Message]) -> Iterator[str]:
-        return self._select(messages).stream_response(messages)
+        provider = self._select(messages)
+        try:
+            yield from provider.stream_response(messages)
+        except ModelProviderError:
+            if self.fallback is None:
+                raise
+            self.last_provider = "local-fallback"
+            yield from self.fallback.stream_response(messages)
 
     def chat_raw(self, messages, tools=None):
-        return self._select(messages).chat_raw(messages, tools=tools)
+        return self._call_with_fallback("chat_raw", messages, tools=tools)
 
     def get_available_models(self) -> List[str]:
         models = []
