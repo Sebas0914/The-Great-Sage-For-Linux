@@ -1202,12 +1202,18 @@ _TRIGGERS = _TRIGGERS + (
 )
 
 def _web_tools_allowed() -> bool:
-    """Network-facing tools require an explicit opt-in and never run in local-only mode."""
+    """Require explicit web enablement, permission, and non-local-only mode."""
     try:
         from great_sage.config import settings
+        from great_sage.core import ai_settings
+
         if getattr(settings, "LOCAL_ONLY", False):
             return False
-        return bool(getattr(settings, "WEB_TOOLS_ENABLED", False))
+        if not getattr(settings, "WEB_TOOLS_ENABLED", False):
+            return False
+
+        config = ai_settings.load(settings.AI_SETTINGS_PATH)
+        return ai_settings.web_allowed(config)
     except Exception:
         return False
 
