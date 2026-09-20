@@ -121,12 +121,16 @@ def check_model() -> Requirement:
 
 
 def check_webview2() -> Requirement:
-    """The runtime the HUD window renders through.
+    """WebView2 is a Windows-only prerequisite for the pywebview HUD.
 
-    Present on essentially every up-to-date Windows 11, but a fresh or
-    LTSC install can lack it, and without it the window never appears -
-    which looks like the app silently doing nothing.
+    Linux uses the system webview backend and must never launch the Windows
+    installer or treat WebView2 as a blocking prerequisite.
     """
+    if os.name != "nt":
+        return Requirement(
+            key="webview2", label="Microsoft WebView2 runtime",
+            ok=True, detail="Not required on Linux.", blocking=False,
+        )
     present, detail = False, "not detected"
     keys = [
         r"HKLM\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients"
