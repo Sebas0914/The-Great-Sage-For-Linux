@@ -85,15 +85,94 @@ class LinuxWaylandLauncher(AppLauncher):
         return f"Opened {value}."
 
 
+class _KWinBridge:
+    """Small D-Bus service receiving active-window updates from KWin."""
+
+    SERVICE = "org.greatsage.KWinBridge"
+    PATH = "/org/greatsage/KWinBridge"
+    INTERFACE = "org.greatsage.KWinBridge"
+
+    def __init__(self, window_info):
+        self.window_info = window_info
+        self._thread = None
+        self._stop = None
+        self.error = None
+
+    def start(self) -> bool:
+        if self._thread and self._thread.is_alive():
+            return True
+        import threading
+        self.error = None
+        self._stop = threading.Event()
+        self._thread = threading.Thread(
+            target=self._run, daemon=True, name="great-sage-kwin-bridge"
+        )
+        self._thread.start()
+        self._ready_event.wait(timeout=2.0)
+        return self.active or self._error is None
+
+    def _run(self):
+        try:
+            asyncio.run(self._serve())
+        except Exception as exc:
+            self.error = exc
+
+    async def _serve(self):
+        from dbus_fast.aio import MessageBus
+        from dbus_fast.service import ServiceInterface, method
+
+        owner = self
+
+        class BridgeInterface(ServiceInterface):
+            def __init__(self):
+                super().__init__(owner.INTERFACE)
+
+            @method()
+            def SetActiveWindow(self, title: "s", pid: "i") -> "":
+                owner.window_info.set_title(title)
+                owner.window_info.set_pid(pid)
+
+        bus = await MessageBus().connect()
+        await bus.request_name(self.SERVICE)
+        bus.export(self.PATH, BridgeInterface())
+        try:
+            await asyncio.get_running_loop().run_in_executor(
+                None, self._stop.wait
+            )
+        finally:
+            bus.unexport(self.PATH)
+            bus.disconnect()
+
+    def stop(self):
+        if self._stop:
+            self._stop.set()
+
+
 class LinuxWaylandWindowInfo(WindowInfo):
     def __init__(self):
         self._title = None
+        self._pid = None
+        self._bridge = _KWinBridge(self)
+        self._bridge.start()
 
     def focused_window_title(self) -> Optional[str]:
         return self._title
 
     def set_title(self, title: Optional[str]):
         self._title = title.strip() if isinstance(title, str) and title.strip() else None
+
+    def set_pid(self, pid: int):
+        try:
+            self._pid = int(pid)
+        except (TypeError, ValueError):
+            self._pid = None
+
+    @property
+    def bridge_error(self):
+        return self._bridge.error
+
+    def stop(self):
+        self._bridge.stop()
 
 
 class LinuxWaylandDataPaths(DataPaths):
@@ -120,7 +199,9 @@ class PortalHotkey(Hotkey):
         self._thread = None
         self._stop_event = None
         self._session = None
+        self._bus = None
         self._error = None
+        self._ready_event = None
 
     @staticmethod
     def _request_path(bus, token: str) -> str:
@@ -192,6 +273,7 @@ class PortalHotkey(Hotkey):
         from dbus_fast.aio import MessageBus
 
         bus = await MessageBus().connect()
+        self._bus = bus
         intro = await bus.introspect(
             "org.freedesktop.portal.Desktop",
             "/org/freedesktop/portal/desktop",
@@ -219,6 +301,8 @@ class PortalHotkey(Hotkey):
         iface.on_activated(activated)
         iface.on_deactivated(deactivated)
         self.active = True
+        if self._ready_event:
+            self._ready_event.set()
         await asyncio.get_running_loop().run_in_executor(
             None, self._stop_event.wait
         )
@@ -229,12 +313,15 @@ class PortalHotkey(Hotkey):
         except Exception as exc:
             self.active = False
             self._error = exc
+            if self._ready_event:
+                self._ready_event.set()
 
     def start(self) -> bool:
         if self.active:
             return True
         import threading
         self._error = None
+        self._ready_event = threading.Event()
         self._stop_event = threading.Event()
         self._thread = threading.Thread(
             target=self._run, daemon=True, name="great-sage-shortcuts"
