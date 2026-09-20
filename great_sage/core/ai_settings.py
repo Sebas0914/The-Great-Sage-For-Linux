@@ -163,7 +163,7 @@ def build_provider(data, fallback):
     except Exception:
         mode = None
     routing = str(os.environ.get("GREAT_SAGE_AI_MODE", "nvidia_first")).lower()
-    if bool(data.get("local_only")) or (mode is not None and not mode.allow_online):
+    if bool(data.get("local_only")) or bool(getattr(settings, "LOCAL_ONLY", False)) or (mode is not None and not mode.allow_online):
         return fallback, "Ollama / Local (local-only)"
     if routing == "local_only" or routing == "local_first" or want == "local":
         return fallback, "Ollama / Local"
