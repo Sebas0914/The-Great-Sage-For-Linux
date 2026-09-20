@@ -96,26 +96,30 @@ class _KWinBridge:
         self.window_info = window_info
         self._thread = None
         self._stop = None
+        self._ready = None
         self.error = None
 
     def start(self) -> bool:
-        if self._thread and self._thread.is_alive():
-            return True
         import threading
+        if self._thread and self._thread.is_alive():
+            return self.error is None
         self.error = None
         self._stop = threading.Event()
+        self._ready = threading.Event()
         self._thread = threading.Thread(
             target=self._run, daemon=True, name="great-sage-kwin-bridge"
         )
         self._thread.start()
-        self._ready_event.wait(timeout=2.0)
-        return self.active or self._error is None
+        self._ready.wait(timeout=2.0)
+        return self.error is None
 
     def _run(self):
         try:
             asyncio.run(self._serve())
         except Exception as exc:
             self.error = exc
+            if self._ready:
+                self._ready.set()
 
     async def _serve(self):
         from dbus_fast.aio import MessageBus
@@ -135,6 +139,8 @@ class _KWinBridge:
         bus = await MessageBus().connect()
         await bus.request_name(self.SERVICE)
         bus.export(self.PATH, BridgeInterface())
+        if self._ready:
+            self._ready.set()
         try:
             await asyncio.get_running_loop().run_in_executor(
                 None, self._stop.wait
