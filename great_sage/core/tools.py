@@ -357,7 +357,9 @@ def ollama_schema() -> List[Dict[str, Any]]:
              "function": {"name": t.name,
                           "description": t.description,
                           "parameters": t.parameters}}
-            for t in REGISTRY if t.tier != BLOCKED]
+            for t in REGISTRY
+            if t.tier != BLOCKED
+            and (t.name not in WEB_TOOL_NAMES or _web_tools_allowed())]
 
 
 def execute(name: str, arguments: Any) -> str:
