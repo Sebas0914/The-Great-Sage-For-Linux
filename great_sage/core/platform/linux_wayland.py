@@ -8,6 +8,7 @@ import asyncio
 import os
 import subprocess
 import shutil
+import sys
 import urllib.parse
 from pathlib import Path
 from typing import Dict, Optional
@@ -236,6 +237,8 @@ class PortalHotkey(Hotkey):
     never treated as the session handle.
     """
 
+    APP_ID = "com.greatsage.GreatSage"
+
     def __init__(self, binding="", on_press=None, on_release=None):
         self.binding = binding or "CTRL+ALT+SPACE"
         self.on_press = on_press
@@ -286,9 +289,14 @@ class PortalHotkey(Hotkey):
                 f"Global shortcut session request failed with response {code}."
             )
         session = results.get("session_handle")
-        if not session:
+        # dbus-fast exposes values of a{sv} dictionaries as Variant objects.
+        # The portal declares session_handle as an object path string, so
+        # unwrap it before passing it to BindShortcuts.
+        if hasattr(session, "value"):
+            session = session.value
+        if not isinstance(session, str) or not session:
             raise RuntimeError(
-                "Global shortcut portal returned no session handle."
+                "Global shortcut portal returned no valid session handle."
             )
         return session
 
@@ -318,11 +326,17 @@ class PortalHotkey(Hotkey):
         trigger = self._portal_trigger(self.binding)
         if not trigger:
             raise RuntimeError("Push-to-talk binding is empty.")
-        shortcuts = [{
-            "id": "activate",
-            "description": "Activate Great Sage",
-            "preferred_trigger": Variant("s", trigger),
-        }]
+        # BindShortcuts expects an array of (id, vardict) tuples.
+        # Using a dict here makes dbus-fast serialize the tuple's first
+        # field incorrectly; with a real tuple the nested a{sv} values
+        # are the Variants expected by the portal signature.
+        shortcuts = [(
+            "activate",
+            {
+                "description": Variant("s", "Activate Great Sage"),
+                "preferred_trigger": Variant("s", trigger),
+            },
+        )]
         request_path = await iface.call_bind_shortcuts(
             session, shortcuts, "",
             {"handle_token": Variant("s", token)}
@@ -340,11 +354,83 @@ class PortalHotkey(Hotkey):
                 f"Global shortcut was not accepted by the desktop portal (requested {trigger!r})."
             )
         return results
+    @staticmethod
+    def _desktop_field_quote(value: str) -> str:
+        # Desktop-entry quoting is not shell quoting.
+        return '"' + str(value).replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+    @classmethod
+    def _ensure_host_desktop_entry(cls) -> None:
+        """Install a lightweight .desktop identity for the portal registry."""
+        apps_dir = Path.home() / ".local" / "share" / "applications"
+        apps_dir.mkdir(parents=True, exist_ok=True)
+        desktop_path = apps_dir / f"{cls.APP_ID}.desktop"
+        repo_root = Path(__file__).resolve().parents[3]
+        launcher = repo_root / "run_hud.py"
+        exec_line = (
+            f"{cls._desktop_field_quote(sys.executable)} "
+            f"{cls._desktop_field_quote(launcher)}"
+        )
+        content = (
+            "[Desktop Entry]\n"
+            "Type=Application\n"
+            "Name=Great Sage\n"
+            f"Exec={exec_line}\n"
+            "Terminal=false\n"
+            "Categories=Utility;Accessibility;\n"
+        )
+        try:
+            current = desktop_path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            current = None
+        if current != content:
+            try:
+                desktop_path.write_text(content, encoding="utf-8")
+            except OSError as exc:
+                raise RuntimeError(
+                    f"Could not create the Great Sage desktop identity: {exc}"
+                ) from exc
+
+    async def _register_host_app(self, bus):
+        """Register this unsandboxed process with the XDG portal when supported."""
+        try:
+            intro = await bus.introspect(
+                "org.freedesktop.portal.Desktop",
+                "/org/freedesktop/portal/desktop",
+            )
+            proxy = bus.get_proxy_object(
+                "org.freedesktop.portal.Desktop",
+                "/org/freedesktop/portal/desktop",
+                intro,
+            )
+            registry = proxy.get_interface(
+                "org.freedesktop.host.portal.Registry"
+            )
+        except Exception:
+            # Older portals may not expose the host registry at all.
+            return False
+
+        self._ensure_host_desktop_entry()
+        await registry.call_register(self.APP_ID, {})
+        return True
+
     async def _worker(self):
         from dbus_fast import Variant
         from dbus_fast.aio import MessageBus
 
         bus = await MessageBus().connect()
+        try:
+            await self._register_host_app(bus)
+        except Exception as exc:
+            bus.disconnect()
+            raise RuntimeError(
+                f"Could not register Great Sage with the XDG portal: {exc}"
+            ) from exc
+
+        intro = await bus.introspect(
+            "org.freedesktop.portal.Desktop",
+            "/org/freedesktop/portal/desktop",
+        )
         self._bus = bus
         intro = await bus.introspect(
             "org.freedesktop.portal.Desktop",
