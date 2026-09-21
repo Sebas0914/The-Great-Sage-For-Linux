@@ -4387,6 +4387,44 @@ Hey Ciel</textarea>
   let desktopMood = 'CALM';
   let desktopMoodWas = '';
   let desktopHovered = false;
+
+  // Controlled presence animation: mood changes are discrete events, not
+  // a constantly changing colour wheel. Raphael reacts briefly, then settles.
+  let desktopPresenceScale = 1.0;
+  let desktopPresenceTargetScale = 1.0;
+  let desktopPresenceColorTimer = null;
+  let desktopSpeechPulseSeen = false;
+
+  const desktopMoodColors = {
+    CALM: '#b9d9ff', THINKING: '#b7a7ff', LISTENING: '#9fdcff',
+    SPEAKING: '#a8d8ff', FOCUSED: '#9fbfff', CURIOUS: '#a8e8e2',
+    HAPPY: '#e8d49c', CONFUSED: '#c8b8e8',
+  };
+
+  function triggerDesktopPresence(mood, scale = 1.045) {
+    if (!DESKTOP_RAPHAEL_MODE) return;
+    desktopPresenceTargetScale = scale;
+    const base = new THREE.Color(colorPicker.value || '#ffffff');
+    const accent = new THREE.Color(desktopMoodColors[mood] || desktopMoodColors.CALM);
+    base.lerp(accent, 0.22);
+    applyThemeColor('#' + base.getHexString());
+    clearTimeout(desktopPresenceColorTimer);
+    desktopPresenceColorTimer = setTimeout(() => {
+      desktopPresenceTargetScale = 1.0;
+      applyThemeColor(colorPicker.value || '#ffffff');
+    }, 1800);
+  }
+
+  function desktopTargetHitsSubtitle(xPct, yPct) {
+    const box = document.getElementById('caption-box');
+    if (!box || !box.classList.contains('show')) return false;
+    const r = box.getBoundingClientRect();
+    const x = xPct * window.innerWidth;
+    const y = yPct * window.innerHeight;
+    const margin = 90;
+    return x >= r.left - margin && x <= r.right + margin &&
+           y >= r.top - margin && y <= r.bottom + margin;
+  }
   const desktopMoodTargets = {
     CALM:      [{x:0.89,y:0.15},{x:0.84,y:0.18}],
     THINKING:  [{x:0.78,y:0.24},{x:0.83,y:0.28}],
@@ -4412,10 +4450,16 @@ Hey Ciel</textarea>
   }
 
   function setDesktopTarget(xPct, yPct) {
-    // Keep Raphael comfortably inside the viewport; the compact visual is
-    // intentionally smaller than the original full-size scene.
-    desktopTarget.x = Math.min(0.94, Math.max(0.08, xPct));
-    desktopTarget.y = Math.min(0.88, Math.max(0.10, yPct));
+    // Never park Raphael inside/near the subtitle. Try the requested mood
+    // position first, then quiet fallback zones.
+    const candidates = [
+      {x: xPct, y: yPct}, {x: 0.88, y: 0.18}, {x: 0.18, y: 0.18},
+      {x: 0.84, y: 0.78}, {x: 0.16, y: 0.78},
+    ];
+    const pick = candidates.find(p => !desktopTargetHitsSubtitle(p.x, p.y))
+      || {x: 0.88, y: 0.18};
+    desktopTarget.x = Math.min(0.94, Math.max(0.08, pick.x));
+    desktopTarget.y = Math.min(0.88, Math.max(0.10, pick.y));
   }
 
   function updateDesktopMoodTarget() {
@@ -5811,11 +5855,12 @@ const MINI_CHAT_PAD = 3;
     } else if (msg.type === 'mood') {
       const next = String(msg.mood || 'CALM').toUpperCase();
       window.__greatSageMood = next;
-      if (DESKTOP_RAPHAEL_MODE) {
+      if (DESKTOP_RAPHAEL_MODE && next !== desktopMood) {
         desktopMood = next;
         const choices = desktopMoodTargets[next] || desktopMoodTargets.CALM;
         const pick = choices[Math.floor(Math.random() * choices.length)];
         setDesktopTarget(pick.x, pick.y);
+        triggerDesktopPresence(next, 1.045);
       }
     } else if (msg.type === 'mode') {
       // GAMING and SLEEP hand the GPU back: the model unloads server
@@ -6875,7 +6920,12 @@ const MINI_CHAT_PAD = 3;
     const zoomT = Math.min(1, (performance.now() - startupZoomStartTime) / STARTUP_ZOOM_MS);
     const zoomEase = 1 - Math.pow(1 - zoomT, 3);
     const startupScaleMult = 1 + (1 - zoomEase) * (STARTUP_ZOOM_START_MULT - 1);
-    const desktopScale = DESKTOP_RAPHAEL_MODE ? 0.52 : 1.0;
+    const desktopScale = DESKTOP_RAPHAEL_MODE
+      ? 0.52 * desktopPresenceScale
+      : 1.0;
+    if (DESKTOP_RAPHAEL_MODE) {
+      desktopPresenceScale += (desktopPresenceTargetScale - desktopPresenceScale) * Math.min(1, dt * 5.0);
+    }
     worldGroup.scale.setScalar(WORLD_GROUP_BASE_SCALE * startupScaleMult * desktopScale);
 
     warpUniforms.uTime.value = t * 10;
