@@ -5785,6 +5785,15 @@ const MINI_CHAT_PAD = 3;
       // because an action and the answer it produced only make sense next
       // to each other.
       addActionEntry(msg.name, msg.result || '');
+    } else if (msg.type === 'mood') {
+      const next = String(msg.mood || 'CALM').toUpperCase();
+      window.__greatSageMood = next;
+      if (DESKTOP_RAPHAEL_MODE) {
+        desktopMood = next;
+        const choices = desktopMoodTargets[next] || desktopMoodTargets.CALM;
+        const pick = choices[Math.floor(Math.random() * choices.length)];
+        setDesktopTarget(pick.x, pick.y);
+      }
     } else if (msg.type === 'mode') {
       // GAMING and SLEEP hand the GPU back: the model unloads server
       // side, and the scene steps down here. Without this half, the HUD
