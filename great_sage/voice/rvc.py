@@ -58,6 +58,7 @@ class RVCVoiceConverter:
         index_rate=0.8,
         protect=0.33,
         pitch_semitones=0,
+        output_gain_db=0.0,
         device="cuda",
         tag="raphael",
         python_executable: str | None = None,
@@ -93,6 +94,7 @@ class RVCVoiceConverter:
             "--index-rate", str(index_rate),
             "--protect", str(protect),
             "--pitch-semitones", str(pitch_semitones),
+            "--output-gain-db", str(output_gain_db),
             "--device", str(device),
             "--tag", str(tag),
         ]
