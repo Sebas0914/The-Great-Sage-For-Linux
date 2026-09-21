@@ -42,6 +42,7 @@ surface format.
 
 import argparse
 import os
+import signal
 import sys
 
 from PySide6.QtCore import QEvent, QPoint, Qt, QTimer, QUrl
@@ -59,12 +60,14 @@ HERE = getattr(sys, "_MEIPASS", None) or os.path.dirname(os.path.abspath(__file_
 
 # The page checks for this and starts in overlay mode, so the host does
 # not have to inject script or wait for the scene to build.
-MINI_QUERY = "?mini=1"
+MINI_QUERY = "?mini=1&desktop=1" if os.name != "nt" else "?mini=1"
 
 # The page sets document.title to this when its exit control is used.
 # titleChanged is the simplest reliable page->host signal that needs no
 # QWebChannel plumbing, and the title is invisible on a frameless window.
 EXIT_SENTINEL = "GS_EXIT_OVERLAY"
+HIDE_SENTINEL = "GS_HIDE_OVERLAY"
+OVERLAY_PID_FILE = "/tmp/great-sage-overlay.pid"
 
 # The page sets this once it has switched to overlay visuals. The
 # window stays HIDDEN until then: shown immediately, it displays the
@@ -164,6 +167,18 @@ class OverlayView(QWebEngineView):
         self._ct_timer.timeout.connect(self._update_click_through)
         self._ct_timer.start(CLICK_THROUGH_POLL_MS)
 
+        self._desktop = os.name != "nt"
+        self._desktop_hover_timer = None
+        if self._desktop:
+            # The fullscreen surface is deliberately click-through so VS Code,
+            # browsers and games underneath remain usable. Cursor position is
+            # global, so hover is polled without consuming mouse events.
+            self.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+            self._desktop_hover_timer = QTimer(self)
+            self._desktop_hover_timer.timeout.connect(self._poll_desktop_hover)
+            self._desktop_hover_timer.start(60)
+
+
     # ---- click-through --------------------------------------------
     def _interactive_at(self, gpos) -> bool:
         """Is there anything to hit at this screen position?"""
@@ -208,6 +223,35 @@ class OverlayView(QWebEngineView):
             return
         self._set_click_through(not self._interactive_at(QCursor.pos()))
 
+    def _poll_desktop_hover(self):
+        if not self._desktop or not self.isVisible():
+            return
+        p = QCursor.pos()
+
+        def got_core(core):
+            try:
+                if not isinstance(core, dict) or "x" not in core or "y" not in core:
+                    return
+                dx = float(p.x()) - float(core["x"])
+                dy = float(p.y()) - float(core["y"])
+                hovered = (dx * dx + dy * dy) <= (105.0 * 105.0)
+                self.page().runJavaScript(
+                    "window.__desktopSetHoverFromHost && "
+                    "window.__desktopSetHoverFromHost(%s);" %
+                    ("true" if hovered else "false")
+                )
+            except Exception:
+                pass
+
+        try:
+            self.page().runJavaScript(
+                "window.__desktopCoreScreenPosition ? "
+                "window.__desktopCoreScreenPosition() : null",
+                got_core,
+            )
+        except Exception:
+            pass
+
     # ---- page -> host ---------------------------------------------
     def _on_title(self, title: str):
         if title.strip() == READY_SENTINEL:
@@ -222,10 +266,14 @@ class OverlayView(QWebEngineView):
             # opened settings, throwing away wherever he had dragged it.
             if not self._placed:
                 self._placed = True
-                place_top_right(self, self.width())
+                if self._desktop:
+                    self.showFullScreen()
+                else:
+                    place_top_right(self, self.width())
             self.show()
-            _apply_ws_border(self)
-            self._install_mouse_filter()
+            if not self._desktop:
+                _apply_ws_border(self)
+                self._install_mouse_filter()
             return
         if title.strip().startswith(OPEN_PANEL_PREFIX):
             section = title.strip()[len(OPEN_PANEL_PREFIX):].strip()
@@ -238,10 +286,18 @@ class OverlayView(QWebEngineView):
         if title.strip() == HIT_CORE_SENTINEL:
             self._hit_all = False
             return
+        if title.strip() == HIDE_SENTINEL:
+            self.hide()
+            return
         if title.strip() == EXIT_SENTINEL:
-            # Exit code 0 tells the launcher this was a deliberate switch
-            # back, not a crash.
             QApplication.instance().exit(0)
+
+    def closeEvent(self, event):
+        if self._desktop:
+            self.hide()
+            event.ignore()
+            return
+        super().closeEvent(event)
 
     # ---- dragging --------------------------------------------------
     # Done here rather than in the page: Qt owns the frameless window, and
@@ -521,6 +577,33 @@ def main() -> int:
     QSurfaceFormat.setDefaultFormat(fmt)
 
     app = QApplication(sys.argv)
+
+    if os.name != "nt":
+        try:
+            with open(OVERLAY_PID_FILE, "w", encoding="utf-8") as fh:
+                fh.write(str(os.getpid()))
+        except OSError:
+            pass
+        commands = {"show": False, "hide": False}
+        signal.signal(signal.SIGUSR1, lambda *_: commands.__setitem__("show", True))
+        signal.signal(signal.SIGUSR2, lambda *_: commands.__setitem__("hide", True))
+        command_timer = QTimer()
+        def apply_command():
+            if commands["show"]:
+                commands["show"] = False
+                view.showFullScreen() if "view" in locals() else None
+                if "view" in locals():
+                    view.show()
+                    view.raise_()
+            if commands["hide"]:
+                commands["hide"] = False
+                if "view" in locals():
+                    view.hide()
+        command_timer.timeout.connect(apply_command)
+        command_timer.start(150)
+        app.aboutToQuit.connect(
+            lambda: os.path.exists(OVERLAY_PID_FILE) and os.unlink(OVERLAY_PID_FILE)
+        )
 
     # --panel: a settings/history window instead of the overlay. Opaque and
     # ordinary - it shows forms and lists, so transparency would only make
