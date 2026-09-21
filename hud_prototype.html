@@ -1957,23 +1957,6 @@ body.mini:hover #mini-exit { opacity: 1; }
     </section>
 
 
-    <div id="chat-bar">
-            <!-- Thumbnails live ABOVE the controls, so attaching
-                 something grows the bar upward instead of pushing the
-                 controls around. Empty and hidden when nothing is
-                 attached. -->
-            <div id="chat-attachments" hidden></div>
-            <div id="chat-input-row">
-          <button id="chat-attach" type="button"
-                  title="Attach an image (the model reads images)">+</button>
-          <input type="text" id="chat-input" placeholder="Ask Great Sage..." autocomplete="off">
-          <button id="chat-send">SEND</button>
-          <button id="think-toggle" type="button" aria-pressed="false"
-                  title="Let Great Sage deliberate before answering. Slower.">THINK</button>
-          <span id="ws-status">connecting...</span>
-            </div>
-          </div>
-
     <hr class="panel-divider">
 
     <section id="panel-section-settings" class="panel-section">
@@ -2321,6 +2304,25 @@ Hey Ciel</textarea>
     </div>
   </div>
 </div>
+
+    <div id="chat-bar">
+            <!-- Thumbnails live ABOVE the controls, so attaching
+                 something grows the bar upward instead of pushing the
+                 controls around. Empty and hidden when nothing is
+                 attached. -->
+            <div id="chat-attachments" hidden></div>
+            <div id="chat-input-row">
+          <button id="chat-attach" type="button"
+                  title="Attach an image (the model reads images)">+</button>
+          <input type="text" id="chat-input" placeholder="Ask Great Sage..." autocomplete="off">
+          <button id="chat-send">SEND</button>
+          <button id="think-toggle" type="button" aria-pressed="false"
+                  title="Let Great Sage deliberate before answering. Slower.">THINK</button>
+          <span id="ws-status">connecting...</span>
+            </div>
+          </div>
+
+
 
 <!-- Three.js is VENDORED, not loaded from a CDN. Two reasons:
      - This is a local-first app, and a packaged build on a machine
