@@ -8662,10 +8662,11 @@ const MINI_CHAT_PAD = 3;
     if (memoryNavBtn) memoryNavBtn.classList.toggle('active', showingMemory);
     if (aiSettingsBtn)
       aiSettingsBtn.classList.toggle('active', workspaceView === 'settings');
-    // The input bar belongs to the conversation - there is nothing to say
-    // to a list of facts or to a settings form.
+    // Keep the message bar mounted while switching between transcript,
+    // memory, and settings. It is the primary way back to a conversation,
+    // and hiding it made the HUD look as if typed chat had disappeared.
     const bar = document.getElementById('chat-bar');
-    if (bar) bar.hidden = workspaceView !== 'chat';
+    if (bar) bar.hidden = false;
     if (showingMemory) renderMemory();
   }
   if (memoryNavBtn) {
