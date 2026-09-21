@@ -9,6 +9,8 @@ from __future__ import annotations
 import argparse
 import os
 import pickle
+
+import numpy as np
 import struct
 import sys
 import tempfile
@@ -43,6 +45,7 @@ def main() -> int:
     parser.add_argument("--index-rate", type=float, default=0.8)
     parser.add_argument("--protect", type=float, default=0.33)
     parser.add_argument("--pitch-semitones", type=int, default=0)
+    parser.add_argument("--output-gain-db", type=float, default=0.0)
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--tag", default="raphael")
     args = parser.parse_args()
@@ -89,6 +92,22 @@ def main() -> int:
                     audio_data=input_path,
                     tag=args.tag,
                 )
+
+                # RVC can occasionally return peaks close to or above full
+                # scale. Feeding those straight to the browser/sounddevice
+                # makes the result sound clipped even when the DSP chain is
+                # completely dry. Apply a small presentation gain, then keep
+                # the peak below 0 dBFS without normalising quiet speech
+                # upward into noise.
+                result = np.asarray(result, dtype=np.float32)
+                if result.ndim > 1:
+                    result = np.mean(result, axis=1)
+                if args.output_gain_db:
+                    result *= 10.0 ** (args.output_gain_db / 20.0)
+                peak = float(np.max(np.abs(result))) if result.size else 0.0
+                if peak > 0.89:
+                    result *= 0.89 / peak
+                result = np.clip(result, -0.89, 0.89)
 
                 with tempfile.NamedTemporaryFile(
                     suffix=".wav",
