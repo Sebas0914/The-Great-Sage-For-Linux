@@ -343,7 +343,26 @@ class F5TTSVoiceOutput(VoiceOutput):
             ) from exc
 
     def set_reference_audio(self, reference_audio_path: str) -> None:
-        """Switch the cloned voice at runtime (the HUD's voice picker)."""
+        """Switch the cloned voice at runtime (the HUD's voice picker).
+
+        Raphael RVC is trained primarily on Japanese speech. Its recommended
+        pipeline uses a Japanese TTS base voice, so when that stage is active
+        we keep F5 on the dedicated Japanese conditioning clip instead of
+        replacing it with one of the English candidate clips.
+        """
+        if (
+            self._rvc is not None
+            and getattr(settings, "F5_RVC_LOCK_JAPANESE_REFERENCE", False)
+        ):
+            locked = settings.F5_REFERENCE_AUDIO_PATH
+            if os.path.abspath(reference_audio_path) != os.path.abspath(locked):
+                log.info(
+                    "Raphael RVC: keeping Japanese F5 reference %s "
+                    "(ignored candidate %s)",
+                    locked,
+                    reference_audio_path,
+                )
+            reference_audio_path = locked
         if not os.path.isfile(reference_audio_path):
             raise VoiceError(f"Reference audio not found at '{reference_audio_path}'.")
         previous = (self._reference_audio_path, self._reference_text, self._ref_cache)
