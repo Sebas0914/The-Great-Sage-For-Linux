@@ -747,14 +747,13 @@ F5_CHUNK_TARGET_CHARS = 220
 RVC_ENABLED = os.environ.get("GREAT_SAGE_RVC_ENABLED", "true").lower() in {"1", "true", "yes", "on"}
 RVC_MODEL_PATH = os.environ.get("GREAT_SAGE_RVC_MODEL", os.path.join("voice_models", "raphael", "Raphael_200e_3400s.pth"))
 RVC_INDEX_PATH = os.environ.get("GREAT_SAGE_RVC_INDEX", os.path.join("voice_models", "raphael", "Raphael.index"))
-RVC_PITCH_METHOD = os.environ.get("GREAT_SAGE_RVC_PITCH", "rmvpe+")
-# Raphael defaults are intentionally a little gentler than the model-card maxima.
-# A lower index influence reduces metallic/harsh artefacts while still keeping
-# the cloned identity; stronger consonant protection helps keep speech crisp.
-RVC_INDEX_RATE = float(os.environ.get("GREAT_SAGE_RVC_INDEX_RATE", "0.55"))
-RVC_PROTECT = float(os.environ.get("GREAT_SAGE_RVC_PROTECT", "0.45"))
+# Use the model author's own recommended inference baseline. That keeps
+# Great Sage aligned with the demo conditions before any extra tuning.
+RVC_PITCH_METHOD = os.environ.get("GREAT_SAGE_RVC_PITCH", "rmvpe")
+RVC_INDEX_RATE = float(os.environ.get("GREAT_SAGE_RVC_INDEX_RATE", "0.8"))
+RVC_PROTECT = float(os.environ.get("GREAT_SAGE_RVC_PROTECT", "0.33"))
 RVC_PITCH_SEMITONES = int(os.environ.get("GREAT_SAGE_RVC_PITCH_SEMITONES", "0"))
-RVC_OUTPUT_GAIN_DB = float(os.environ.get("GREAT_SAGE_RVC_OUTPUT_GAIN_DB", "1.5"))
+RVC_OUTPUT_GAIN_DB = float(os.environ.get("GREAT_SAGE_RVC_OUTPUT_GAIN_DB", "0.0"))
 RVC_DEVICE = os.environ.get("GREAT_SAGE_RVC_DEVICE", "cuda")
 RVC_TAG = os.environ.get("GREAT_SAGE_RVC_TAG", "raphael")
 RVC_PYTHON = os.environ.get(
