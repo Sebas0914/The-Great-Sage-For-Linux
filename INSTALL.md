@@ -184,16 +184,18 @@ export GREAT_SAGE_RVC_MODEL=/absolute/path/to/Raphael_200e_3400s.pth
 export GREAT_SAGE_RVC_INDEX=/absolute/path/to/Raphael.index
 ```
 
-Then install the Python integration dependency:
+Then install the isolated RVC runtime. Do this from the repository root with the main `.venv` activated:
 
 ```bash
-pip install -r requirements.txt
+python scripts/install_raphael_rvc_runtime.py
 ```
 
+This creates `.rvc-venv` with access to the main environment's CUDA/PyTorch packages, then installs the RVC-only dependencies there. Do **not** install `infer_rvc_python` directly into the main Python 3.14 environment: its `faiss-cpu==1.10.0` pin predates CPython 3.14 Linux wheels. The installer uses a newer ABI-compatible FAISS build in the isolated runtime.
+
 The RVC wrapper used by Great Sage supports array input/output and preloaded
-models; its current PyPI release requires Python 3.10+ but publishes classifiers
-through Python 3.13, so Python 3.14 should be treated as a runtime compatibility
-test rather than a guarantee. citeturn1view0
+models. Its published classifiers currently stop at Python 3.13, so Great Sage
+keeps it out of the main Python 3.14 environment and launches a persistent
+companion worker instead. citeturn1view0
 
 If the model files are missing or the RVC dependency cannot initialize, Great
 Sage keeps F5-TTS active instead of failing startup.
