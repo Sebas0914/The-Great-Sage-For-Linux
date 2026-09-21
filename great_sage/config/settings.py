@@ -673,6 +673,15 @@ F5_REFERENCE_AUDIO_PATH = os.environ.get(
     os.path.join("voice_lines", "shinka_jouken.ogg"),
 )
 
+# When Raphael RVC is active, keep F5 conditioned on the Japanese reference
+# above. The candidate picker contains English references, and feeding one
+# back into F5 reintroduces the cross-language mismatch the Raphael model card
+# warns about. The picker remains available for non-RVC F5 use.
+F5_RVC_LOCK_JAPANESE_REFERENCE = (
+    os.environ.get("GREAT_SAGE_F5_RVC_LOCK_REFERENCE", "true").lower()
+    in {"1", "true", "yes", "on"}
+)
+
 # Flow-matching steps: the speed/quality dial, with no equivalent in an
 # autoregressive engine. Measured on one 9.5s line: 8 -> 2.16s (4.4x
 # realtime), 16 -> 3.94s, 32 -> 8.19s. 8 was chosen after an A/B where
