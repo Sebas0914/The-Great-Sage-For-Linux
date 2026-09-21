@@ -60,6 +60,7 @@ class RVCVoiceConverter:
         pitch_semitones=0,
         output_gain_db=0.0,
         dry_mix=0.0,
+        clarity_eq=True,
         device="cuda",
         tag="raphael",
         python_executable: str | None = None,
@@ -97,6 +98,7 @@ class RVCVoiceConverter:
             "--pitch-semitones", str(pitch_semitones),
             "--output-gain-db", str(output_gain_db),
             "--dry-mix", str(dry_mix),
+            "--clarity-eq", "true" if clarity_eq else "false",
             "--device", str(device),
             "--tag", str(tag),
         ]
