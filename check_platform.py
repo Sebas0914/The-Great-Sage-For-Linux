@@ -38,7 +38,7 @@ def main():
 
     script = KWIN_SCRIPT.read_text(encoding="utf-8")
     assert "setInterval" in script
-    assert "clearInterval" in script
+    assert "reportCurrent" in script
     required = (
         "workspace.activeWindow",
         "workspace.windowActivated",
