@@ -31,10 +31,20 @@ def transcribe(audio: np.ndarray) -> str:
     from great_sage.config import settings
 
     language = getattr(settings, "INPUT_LANGUAGE", "es")
+    # Bias the multilingual decoder toward the project's proper names.
+    # Without this, short Spanish speech containing "Raphael" is easy for the
+    # base model to render as a phonetically unrelated phrase such as "a caer".
+    initial_prompt = getattr(
+        settings,
+        "STT_INITIAL_PROMPT",
+        "Raphael. Great Sage. Ciel.",
+    )
     segments, _ = model.transcribe(
         audio,
         language=language,
         vad_filter=True,
+        initial_prompt=initial_prompt,
+        condition_on_previous_text=False,
     )
     text = "".join(seg.text for seg in segments).strip()
 
