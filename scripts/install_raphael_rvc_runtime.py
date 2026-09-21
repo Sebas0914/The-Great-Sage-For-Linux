@@ -58,6 +58,10 @@ def main() -> int:
     # builds on modern Python. The prebuilt distribution exposes the same
     # pyworld import and publishes current Linux CPython wheels.
     run(str(PYTHON), "-m", "pip", "install", "pyworld-prebuilt>=0.3.5.post1")
+    # Lightweight runtime dependencies declared by infer_rvc_python but not
+    # needed in the main Great Sage environment. Install them without asking
+    # pip to replace the shared CUDA/PyTorch stack.
+    run(str(PYTHON), "-m", "pip", "install", "ffmpeg-python>=0.2.0", "librosa", "soxr>=1.1.0", "torchcrepe==0.0.20", "transformers")
 
     check = (
         "import infer_rvc_python, faiss, pyworld; "
