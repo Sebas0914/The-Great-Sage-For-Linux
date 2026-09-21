@@ -37,6 +37,7 @@ from great_sage.voice.audio_fx import VoiceFX
 from great_sage.voice.base import VoiceError, VoiceOutput
 from great_sage.voice.sinks import AudioSink, LocalSpeakerSink
 from great_sage.voice.voice_lines import VoiceLine, label_from_pattern, split_voice_lines
+from great_sage.voice.rvc import RVCVoiceConverter
 
 log = logging.getLogger(__name__)
 
@@ -296,6 +297,23 @@ class F5TTSVoiceOutput(VoiceOutput):
         self._disabled_patterns: Set[str] = set(disabled_voice_line_patterns or ())
         self.fx = VoiceFX()  # off by default - see the HUD's AUDIO FX panel
 
+        self._rvc = None
+        if getattr(settings, "RVC_ENABLED", False):
+            try:
+                self._rvc = RVCVoiceConverter(
+                    model_path=settings.RVC_MODEL_PATH,
+                    index_path=settings.RVC_INDEX_PATH,
+                    pitch_method=settings.RVC_PITCH_METHOD,
+                    index_rate=settings.RVC_INDEX_RATE,
+                    protect=settings.RVC_PROTECT,
+                    pitch_semitones=settings.RVC_PITCH_SEMITONES,
+                    device=settings.RVC_DEVICE,
+                    tag=settings.RVC_TAG,
+                )
+                log.info("Raphael RVC stage enabled")
+            except Exception as exc:
+                log.warning("Raphael RVC unavailable; using F5-TTS only: %s", exc)
+
     def set_fx(self, **kwargs) -> None:
         """Update the output effect chain (reverb, flanger, etc.)."""
         self.fx.update(**kwargs)
@@ -390,6 +408,11 @@ class F5TTSVoiceOutput(VoiceOutput):
             )
         except Exception as exc:
             raise VoiceError(f"F5-TTS synthesis failed: {exc}") from exc
+        if self._rvc is not None:
+            try:
+                wav, sample_rate = self._rvc.convert_array(wav, sample_rate)
+            except Exception as exc:
+                log.warning("Raphael RVC conversion failed; using F5-TTS audio: %s", exc)
         return wav, sample_rate
 
     def generate(self, text: str):
