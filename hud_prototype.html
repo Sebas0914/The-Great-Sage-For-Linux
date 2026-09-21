@@ -1504,6 +1504,103 @@ body.mini #center-panel details > summary { font-size: 10.5px; }
 body.mini #mini-drag-handle { z-index: 70; }
 body.mini #mini-exit { z-index: 70; }
 
+/* ---------------- DESKTOP RAPHAEL MODE ----------------
+   Linux desktop mode keeps the WebGL canvas transparent and turns the
+   existing mini scene into a compact, always-on-top Raphael presence.
+   The task panel is deliberately hover-only: it never occupies space
+   until the user points at Raphael while a task is active. */
+body.desktop-raphael > *:not(#canvas-wrap):not(.mini-keep) {
+  display: none !important;
+}
+html.desktop-raphael, body.desktop-raphael {
+  background: transparent !important;
+  background-color: transparent !important;
+  overflow: hidden;
+}
+body.desktop-raphael #canvas-wrap {
+  background: transparent !important;
+}
+body.desktop-raphael #mini-chat {
+  display: none !important;
+}
+body.desktop-raphael #mini-drag-handle {
+  opacity: 0;
+  pointer-events: none;
+}
+body.desktop-raphael #mini-exit {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 160ms ease;
+}
+body.desktop-raphael #desktop-task-panel {
+  position: fixed;
+  display: block;
+  width: min(300px, 30vw);
+  min-width: 210px;
+  max-width: 330px;
+  box-sizing: border-box;
+  padding: 12px 14px;
+  background: rgba(4, 8, 12, 0.92);
+  border: 1px solid rgba(255,255,255,0.68);
+  color: #eef7ff;
+  font: 500 11px/1.5 Consolas, "Cascadia Mono", monospace;
+  letter-spacing: 0.04em;
+  clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px),
+                     calc(100% - 8px) 100%, 0 100%, 0 8px);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.58);
+  opacity: 0;
+  transform: translateY(5px) scale(0.98);
+  transform-origin: center;
+  pointer-events: none;
+  transition: opacity 150ms ease, transform 150ms ease;
+  z-index: 90;
+}
+body.desktop-raphael #desktop-task-panel.show {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+#desktop-task-panel .task-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  opacity: 0.72;
+}
+#desktop-task-panel .task-state {
+  font-size: 13px;
+  letter-spacing: 0.05em;
+  margin-bottom: 4px;
+}
+#desktop-task-panel .task-detail {
+  opacity: 0.58;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+#desktop-task-panel .task-rule {
+  height: 1px;
+  margin: 8px 0;
+  background: rgba(255,255,255,0.16);
+}
+#desktop-task-panel .task-progress {
+  height: 2px;
+  margin-top: 9px;
+  background: rgba(255,255,255,0.10);
+  overflow: hidden;
+}
+#desktop-task-panel .task-progress > span {
+  display: block;
+  width: 38%;
+  height: 100%;
+  background: rgba(255,255,255,0.78);
+  animation: desktop-task-progress 1.2s ease-in-out infinite alternate;
+}
+@keyframes desktop-task-progress {
+  from { transform: translateX(-110%); }
+  to   { transform: translateX(250%); }
+}
+
 /* ---------------- MINI OVERLAY MODE ---------------- */
 /* Hide-everything-but, rather than listing what to hide: the page gains
    panels over time and a hide-list would quietly let new ones through
@@ -1702,6 +1799,13 @@ body.mini:hover #mini-exit { opacity: 1; }
      whatever angle the bubble ends up on. -->
 <svg id="mini-chat-link" class="mini-keep" aria-hidden="true"></svg>
 <div id="mini-chat" class="mini-keep"><span id="mini-chat-text"></span></div>
+<div id="desktop-task-panel" class="mini-keep" aria-hidden="true">
+  <div class="task-head"><span>RAPHAEL // ACTIVITY</span><span id="desktop-task-mood">CALM</span></div>
+  <div class="task-state" id="desktop-task-state">Standby.</div>
+  <div class="task-rule"></div>
+  <div class="task-detail" id="desktop-task-detail">No active task.</div>
+  <div class="task-progress"><span></span></div>
+</div>
 
 <div id="core-pole"></div>
 
@@ -2459,6 +2563,7 @@ Hey Ciel</textarea>
     // Same reasoning as the wheel: the caption's saved spot is relative,
     // so it has to be recomputed against the new viewport.
     placeCaption();
+    if (DESKTOP_RAPHAEL_MODE && desktopHovered) placeDesktopTaskPanel();
   }
   // Resize is DEBOUNCED, because handleResize is expensive: it
   // reallocates the two render targets and the renderer's drawing
@@ -4253,6 +4358,128 @@ Hey Ciel</textarea>
     for (let i = 0; i < shards.length; i++) shards[i].visible = false;
   }
 
+  // ---------------- Desktop Raphael movement ----------------
+  // The scene is already rendered with a transparent WebGL target in mini
+  // mode. In desktop mode we reuse that path instead of creating another
+  // renderer. The whole compact Raphael group can therefore move anywhere
+  // in the viewport while the desktop underneath remains untouched.
+  let desktopTarget = { x: 0.89, y: 0.15 };
+  let desktopMood = 'CALM';
+  let desktopMoodWas = '';
+  let desktopHovered = false;
+  const desktopMoodTargets = {
+    CALM:      [{x:0.89,y:0.15},{x:0.84,y:0.18}],
+    THINKING:  [{x:0.78,y:0.24},{x:0.83,y:0.28}],
+    LISTENING: [{x:0.86,y:0.12},{x:0.76,y:0.17}],
+    SPEAKING:  [{x:0.82,y:0.16},{x:0.72,y:0.23}],
+    FOCUSED:   [{x:0.88,y:0.78},{x:0.79,y:0.70}],
+  };
+
+  function desktopScreenToWorld(xPct, yPct) {
+    const ndc = new THREE.Vector3(
+      xPct * 2 - 1,
+      -(yPct * 2 - 1),
+      0.5
+    );
+    const ray = new THREE.Raycaster();
+    ray.setFromCamera(ndc, camera);
+    const point = new THREE.Vector3();
+    const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
+    return ray.ray.intersectPlane(plane, point) || new THREE.Vector3();
+  }
+
+  function setDesktopTarget(xPct, yPct) {
+    // Keep Raphael comfortably inside the viewport; the compact visual is
+    // intentionally smaller than the original full-size scene.
+    desktopTarget.x = Math.min(0.94, Math.max(0.08, xPct));
+    desktopTarget.y = Math.min(0.88, Math.max(0.10, yPct));
+  }
+
+  function updateDesktopMoodTarget() {
+    if (!DESKTOP_RAPHAEL_MODE) return;
+    let mood = 'CALM';
+    if (pttActive) mood = 'LISTENING';
+    else if (aiThinking) mood = 'THINKING';
+    else if (speechInProgress || amplitude > 0.22) mood = 'SPEAKING';
+    if (desktopMood !== mood) {
+      desktopMood = mood;
+      const choices = desktopMoodTargets[mood] || desktopMoodTargets.CALM;
+      const pick = choices[Math.floor(Math.random() * choices.length)];
+      setDesktopTarget(pick.x, pick.y);
+    }
+  }
+
+  function updateDesktopTaskPanel() {
+    if (!DESKTOP_RAPHAEL_MODE) return;
+    const panel = document.getElementById('desktop-task-panel');
+    if (!panel) return;
+    const state = document.getElementById('desktop-task-state');
+    const detail = document.getElementById('desktop-task-detail');
+    const mood = document.getElementById('desktop-task-mood');
+    const active = !!(aiThinking || speechInProgress || pttActive);
+    const taskText = (replyBuffer || '').trim();
+    if (state) {
+      state.textContent = pttActive ? 'Listening to you…'
+        : aiThinking ? 'Working on the current request…'
+        : speechInProgress ? 'Delivering the response…'
+        : 'Standby.';
+    }
+    if (detail) {
+      detail.textContent = taskText
+        ? taskText.slice(-220)
+        : (aiThinking
+            ? 'Analysing the request and preparing the next response.'
+            : speechInProgress
+              ? 'Raphael is speaking while the Spanish subtitle is kept separate.'
+              : 'No active task.');
+    }
+    if (mood) mood.textContent = desktopMood;
+    if (desktopHovered && active) {
+      panel.classList.add('show');
+      panel.setAttribute('aria-hidden', 'false');
+      placeDesktopTaskPanel();
+    } else {
+      panel.classList.remove('show');
+      panel.setAttribute('aria-hidden', 'true');
+    }
+  }
+
+  function placeDesktopTaskPanel() {
+    const panel = document.getElementById('desktop-task-panel');
+    if (!panel || !DESKTOP_RAPHAEL_MODE) return;
+    const core = coreScreenPosition();
+    const w = panel.offsetWidth || 260;
+    const h = panel.offsetHeight || 120;
+    const gap = 18;
+    // Choose the quadrant with the most room. This deliberately mirrors
+    // the user's rule: top-left Raphael gets a panel to the right/below;
+    // bottom-right Raphael gets one to the left/above, etc.
+    const rightSpace = window.innerWidth - core.x;
+    const leftSpace = core.x;
+    const downSpace = window.innerHeight - core.y;
+    const upSpace = core.y;
+    let left = rightSpace >= leftSpace ? core.x + gap : core.x - w - gap;
+    let top = downSpace >= upSpace ? core.y + 18 : core.y - h - 18;
+    left = Math.min(Math.max(10, left), window.innerWidth - w - 10);
+    top = Math.min(Math.max(10, top), window.innerHeight - h - 10);
+    panel.style.left = left + 'px';
+    panel.style.top = top + 'px';
+  }
+
+  function setDesktopHover(hovered) {
+    if (!DESKTOP_RAPHAEL_MODE || hovered === desktopHovered) return;
+    desktopHovered = hovered;
+    updateDesktopTaskPanel();
+  }
+
+  window.addEventListener('pointermove', (e) => {
+    if (!DESKTOP_RAPHAEL_MODE) return;
+    const core = coreScreenPosition();
+    const radius = Math.max(72, coreScreenRadius(3.5) * 0.72);
+    const dx = e.clientX - core.x, dy = e.clientY - core.y;
+    setDesktopHover((dx * dx + dy * dy) <= radius * radius);
+  });
+
   function applyMiniMode(on) {
     const wasMini = miniMode;
     miniMode = on;
@@ -4292,6 +4519,11 @@ Hey Ciel</textarea>
   // flashing the full-size scene first.
   const IS_STANDALONE_OVERLAY =
     new URLSearchParams(location.search).get('mini') === '1';
+
+  // Linux desktop mode: one transparent HUD window, with the existing
+  // compact Great Sage visual rendered directly over the desktop.
+  const DESKTOP_RAPHAEL_MODE =
+    new URLSearchParams(location.search).get('desktop') === '1';
 
   // ?panel=settings|history opens this page as a standalone PANEL window
   // instead of the HUD - see overlay_window.py --panel. The overlay is a
@@ -6607,7 +6839,8 @@ const MINI_CHAT_PAD = 3;
     const zoomT = Math.min(1, (performance.now() - startupZoomStartTime) / STARTUP_ZOOM_MS);
     const zoomEase = 1 - Math.pow(1 - zoomT, 3);
     const startupScaleMult = 1 + (1 - zoomEase) * (STARTUP_ZOOM_START_MULT - 1);
-    worldGroup.scale.setScalar(WORLD_GROUP_BASE_SCALE * startupScaleMult);
+    const desktopScale = DESKTOP_RAPHAEL_MODE ? 0.52 : 1.0;
+    worldGroup.scale.setScalar(WORLD_GROUP_BASE_SCALE * startupScaleMult * desktopScale);
 
     warpUniforms.uTime.value = t * 10;
 
@@ -6674,6 +6907,14 @@ const MINI_CHAT_PAD = 3;
     // thinking spin) and retracted the rest of the time. Great Sage's own
     // speech drives its normal visuals - the octagon eyelid and the glow -
     // not this.
+    updateDesktopMoodTarget();
+    if (DESKTOP_RAPHAEL_MODE) {
+      const target = desktopScreenToWorld(desktopTarget.x, desktopTarget.y);
+      worldGroup.position.x += (target.x - worldGroup.position.x) * 0.075;
+      worldGroup.position.y += (target.y - worldGroup.position.y) * 0.075;
+      updateDesktopTaskPanel();
+    }
+
     ringExpand += ((pttActive || aiThinking ? 1 : 0) - ringExpand) * 0.06;
     micLevel += (micLevelTarget - micLevel) * 0.25;
     // A little spring toward 1.12x while the pointer is over the core
@@ -7850,13 +8091,14 @@ const MINI_CHAT_PAD = 3;
   window.__enterMini = enterMini;
 
   document.getElementById('btn-mini').addEventListener('click', enterMini);
-  document.getElementById('mini-exit').addEventListener('click', exitMini);
+  document.getElementById('mini-exit').addEventListener('click',
+    () => DESKTOP_RAPHAEL_MODE ? callHost('hide_app') : exitMini());
 
   // ---- Window controls (there is no native title bar) ----
   document.getElementById('win-min').addEventListener('click',
     () => callHost('minimize'));
   document.getElementById('win-close').addEventListener('click',
-    () => callHost('close_app'));
+    () => callHost(DESKTOP_RAPHAEL_MODE ? 'hide_app' : 'close_app'));
   document.getElementById('win-max').addEventListener('click', async () => {
     // Python owns the maximised flag: pywebview has maximize() and
     // restore() but no way to ask which state the window is in, so the
