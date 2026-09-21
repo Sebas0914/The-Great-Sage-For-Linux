@@ -12,6 +12,7 @@ import pickle
 import struct
 import subprocess
 import sys
+import tempfile
 from typing import Tuple
 
 import numpy as np
@@ -67,6 +68,8 @@ class RVCVoiceConverter:
         self._proc = None
         self._stdin = None
         self._stdout = None
+        self._stderr_log_path = os.environ.get("GREAT_SAGE_RVC_LOG", os.path.join(tempfile.gettempdir(), "great-sage-raphael-rvc.log"))
+        self._stderr_log = None
 
         executable = python_executable or self._find_python()
         command = [
@@ -82,11 +85,12 @@ class RVCVoiceConverter:
             "--tag", str(tag),
         ]
         try:
+            self._stderr_log = open(self._stderr_log_path, "ab", buffering=0)
             self._proc = subprocess.Popen(
                 command,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                stderr=self._stderr_log,
                 bufsize=0,
                 text=False,
             )
@@ -115,6 +119,19 @@ class RVCVoiceConverter:
         # Development fallback: allows a manually installed RVC environment.
         return sys.executable
 
+    def _raise_worker_failure(self, message: str):
+        code = self._proc.poll() if self._proc is not None else None
+        diagnostics = ""
+        try:
+            with open(self._stderr_log_path, "rb") as log_file:
+                diagnostics = log_file.read().decode("utf-8", errors="replace").strip()
+        except OSError:
+            pass
+        detail = f"{message} (exit code {code})"
+        if diagnostics:
+            detail += f"\nWorker diagnostics:\n{diagnostics[-12000:]}"
+        raise RuntimeError(detail)
+
     def convert_array(self, samples, sample_rate: int) -> Tuple[np.ndarray, int]:
         if self._proc is None or self._proc.poll() is not None:
             raise RuntimeError("Raphael RVC worker is not running")
@@ -124,7 +141,12 @@ class RVCVoiceConverter:
         audio = np.ascontiguousarray(audio)
         self._stdin.write(_frame({"op": "convert", "audio": audio, "sample_rate": int(sample_rate)}))
         self._stdin.flush()
-        response = _read_frame(self._stdout)
+        try:
+            response = _read_frame(self._stdout)
+        except RuntimeError as exc:
+            if self._proc is not None and self._proc.poll() is not None:
+                self._raise_worker_failure("Raphael RVC worker exited during conversion")
+            raise exc
         if response.get("ok") is not True:
             raise RuntimeError(response.get("error") or "Raphael RVC conversion failed")
         return np.asarray(response["audio"], dtype=np.float32).reshape(-1), int(response["sample_rate"])
@@ -145,6 +167,12 @@ class RVCVoiceConverter:
         self._stdin = None
         self._stdout = None
         self._proc = None
+        if self._stderr_log is not None:
+            try:
+                self._stderr_log.close()
+            except Exception:
+                pass
+            self._stderr_log = None
 
     def unload(self):
         self.close()
