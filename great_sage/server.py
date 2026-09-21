@@ -1141,7 +1141,17 @@ async def run_server(engine, voice) -> None:
             # the next launch - live rebinding worked, which hid it.
             combo = (saved.get("hud") or {}).get("ptt-combo")
             if isinstance(combo, str) and combo.strip():
-                return combo.strip()
+                combo = combo.strip()
+                # Older development builds could persist Ctrl+1 even though
+                # the HUD's intended Linux default is Alt+1. Migrate only
+                # that known legacy value so an old saved file cannot disable
+                # the PTT after an update.
+                if combo.casefold() == "ctrl+1":
+                    combo = "alt+1"
+                    saved.setdefault("hud", {})["ptt-combo"] = combo
+                    hud_settings.save(settings.HUD_SETTINGS_PATH, saved)
+                    log.info("Migrated legacy PTT binding ctrl+1 -> alt+1")
+                return combo
         except Exception:
             log.exception("Could not read the push-to-talk key")
         return getattr(settings, "GLOBAL_HOTKEY", "ctrl+alt+s")
@@ -1156,7 +1166,12 @@ async def run_server(engine, voice) -> None:
             )
             _hotkey = _platform.hotkey
             if not _hotkey.start():
-                log.error("Global hotkey unavailable for %s", _ptt_binding())
+                detail = getattr(_hotkey, "_error", None)
+                log.error(
+                    "Global hotkey unavailable for %s%s",
+                    _ptt_binding(),
+                    f": {detail}" if detail else "",
+                )
         except Exception:
             log.exception("Global hotkey unavailable")
 
