@@ -59,6 +59,7 @@ class RVCVoiceConverter:
         protect=0.33,
         pitch_semitones=0,
         output_gain_db=0.0,
+        dry_mix=0.0,
         device="cuda",
         tag="raphael",
         python_executable: str | None = None,
@@ -95,6 +96,7 @@ class RVCVoiceConverter:
             "--protect", str(protect),
             "--pitch-semitones", str(pitch_semitones),
             "--output-gain-db", str(output_gain_db),
+            "--dry-mix", str(dry_mix),
             "--device", str(device),
             "--tag", str(tag),
         ]
