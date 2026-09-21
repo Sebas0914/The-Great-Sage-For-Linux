@@ -46,6 +46,7 @@ def main() -> int:
     parser.add_argument("--protect", type=float, default=0.33)
     parser.add_argument("--pitch-semitones", type=int, default=0)
     parser.add_argument("--output-gain-db", type=float, default=0.0)
+    parser.add_argument("--dry-mix", type=float, default=0.0)
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--tag", default="raphael")
     args = parser.parse_args()
@@ -102,8 +103,27 @@ def main() -> int:
                 result = np.asarray(result, dtype=np.float32)
                 if result.ndim > 1:
                     result = np.mean(result, axis=1)
+
                 if args.output_gain_db:
                     result *= 10.0 ** (args.output_gain_db / 20.0)
+
+                dry_mix = max(0.0, min(1.0, float(args.dry_mix)))
+                if dry_mix > 0.0:
+                    dry, dry_rate = sf.read(
+                        input_path, dtype="float32", always_2d=False
+                    )
+                    dry = np.asarray(dry, dtype=np.float32)
+                    if dry.ndim > 1:
+                        dry = np.mean(dry, axis=1)
+                    if dry_rate != output_rate or len(dry) != len(result):
+                        if len(dry) > 1 and len(result) > 1:
+                            x_old = np.linspace(0.0, 1.0, num=len(dry), endpoint=False)
+                            x_new = np.linspace(0.0, 1.0, num=len(result), endpoint=False)
+                            dry = np.interp(x_new, x_old, dry).astype(np.float32)
+                        else:
+                            dry = np.resize(dry, result.shape).astype(np.float32)
+                    result = (1.0 - dry_mix) * result + dry_mix * dry
+
                 peak = float(np.max(np.abs(result))) if result.size else 0.0
                 if peak > 0.89:
                     result *= 0.89 / peak
