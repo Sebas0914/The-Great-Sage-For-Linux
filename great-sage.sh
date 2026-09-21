@@ -7,7 +7,18 @@ RUN="$ROOT/run_hud.py"
 PIDFILE="$ROOT/.great_sage.pid"
 OVERLAY_PIDFILE="/tmp/great-sage-overlay.pid"
 
-usage() { echo "Usage: $0 {start|run|stop|restart|show|hide|status}"; }
+usage() { echo "Usage: $0 {install|start|run|stop|restart|show|hide|status}"; }
+
+UNIT_SRC="$ROOT/systemd/great-sage.service"
+UNIT_DST="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/great-sage.service"
+
+install_service() {
+  mkdir -p "$(dirname "$UNIT_DST")"
+  cp "$UNIT_SRC" "$UNIT_DST"
+  systemctl --user daemon-reload
+  systemctl --user enable --now great-sage.service
+  echo "Great Sage installed and enabled for the graphical user session."
+}
 
 is_running() {
   [ -f "$PIDFILE" ] || return 1
@@ -17,6 +28,11 @@ is_running() {
 }
 
 start() {
+  if [ -f "$UNIT_DST" ] && command -v systemctl >/dev/null 2>&1; then
+    systemctl --user start great-sage.service
+    echo "Great Sage started through systemd."
+    return 0
+  fi
   if is_running; then show_overlay; echo "Great Sage is already running."; return 0; fi
   "$0" run >"$ROOT/great_sage_stdout.log" 2>&1 &
   echo $! >"$PIDFILE"
@@ -50,6 +66,9 @@ hide_overlay() {
 }
 
 stop() {
+  if [ -f "$UNIT_DST" ] && command -v systemctl >/dev/null 2>&1; then
+    systemctl --user stop great-sage.service || true
+  fi
   if is_running; then
     local pid
     pid="$(cat "$PIDFILE")"
@@ -75,7 +94,14 @@ status() {
 }
 
 case "${1:-}" in
-  start) start ;; run) run ;; stop) stop ;; restart) stop; start ;;
+  start) start ;; run) run ;; stop) stop ;; restart) 
+    if [ -f "$UNIT_DST" ] && command -v systemctl >/dev/null 2>&1; then
+      systemctl --user restart great-sage.service
+    else
+      stop; start
+    fi
+    ;;
+  install) install_service ;;
   show) show_overlay ;; hide) hide_overlay ;; status) status ;;
   *) usage; exit 2 ;;
 esac
