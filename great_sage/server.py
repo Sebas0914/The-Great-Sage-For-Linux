@@ -209,6 +209,12 @@ def _log_exceptions(fn, label):
     return run
 
 
+def _visual_mood(state) -> str:
+    try:
+        return state.visual_mood()
+    except Exception:
+        return "CALM"
+
 def _guard_protected() -> str:
     """The prompt PROSE a reply must never recite back, built once.
 
@@ -609,6 +615,7 @@ def _handle_chat(text, engine, voice, sink, websocket, loop,
                            "actually,")):
             sage_state.on_correction(st)
         engine.state_hint = st.reply_hint()
+        send({"type": "mood", "mood": _visual_mood(st)})
 
     # Explicit "remember this" / "forget that" is acted on BEFORE the
     # model is called, so the fact is already stored when recall runs for
@@ -785,6 +792,7 @@ def _handle_chat(text, engine, voice, sink, websocket, loop,
             engine.replace_last_reply(guarded)
         if st is not None:
             sage_state.on_reply(st, guarded, bool(used_tools))
+            send({"type": "mood", "mood": _visual_mood(st)})
             log.debug("State: %s", st.snapshot())
         # `text` carries the FINAL reply so the HUD's transcript records what
         # was actually delivered, not the discarded draft it streamed.
