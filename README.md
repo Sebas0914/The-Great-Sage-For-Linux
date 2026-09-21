@@ -48,6 +48,8 @@ The intended local voice path is:
 
 `speech -> faster-whisper -> Great Sage -> F5-TTS -> Raphael RVC v2`
 
+Raphael RVC runs in a small companion Python environment (`.rvc-venv`). This keeps the main Great Sage Python 3.14 environment clean while reusing its installed CUDA/PyTorch stack. Run `python scripts/install_raphael_rvc_runtime.py` once after installing the main requirements.
+
 Speech recognition is local. F5-TTS is local and GPU acceleration is preferred. When the Raphael RVC assets are installed, the generated audio is post-processed through the Raphael RVC v2 model using RMVPE, index rate 0.8, and consonant protection 0.33. The third-party weights are not bundled.
 
 ## Install
@@ -115,7 +117,7 @@ CI runs these checks on the Linux development branch and pull requests.
 - Screen capture depends on KDE Spectacle being available.
 - NVIDIA-hosted AI requires an API key and network access.
 - F5-TTS, faster-whisper, and the optional Raphael RVC stage have substantial model/runtime dependencies.
-- Raphael RVC model assets are third-party and must be installed separately; they are not downloaded by Great Sage.
+- Raphael RVC model assets are third-party and must be installed separately; they are not downloaded by Great Sage. The RVC Python runtime is also isolated in `.rvc-venv` because its published dependency pins are not compatible with the main Python 3.14 environment.
 - Image generation is not implemented.
 
 ## License and assets
