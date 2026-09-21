@@ -4,6 +4,10 @@ RVC runs in a small companion process because infer_rvc_python currently pins
 faiss-cpu to a release that has no CPython 3.14 wheel. The companion virtual
 environment reuses the main environment's CUDA/PyTorch installation through
 system-site-packages, while keeping RVC-only packages isolated.
+
+Audio crosses the process boundary through temporary WAV files rather than a
+large pickle payload. This keeps the IPC protocol small and avoids pipe-buffer
+and native-array serialization issues during RVC inference.
 """
 from __future__ import annotations
 
@@ -16,9 +20,14 @@ import tempfile
 from typing import Tuple
 
 import numpy as np
+import soundfile as sf
 
 
-_DEFAULT_WORKER = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "scripts", "rvc_worker.py")
+_DEFAULT_WORKER = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+    "scripts",
+    "rvc_worker.py",
+)
 
 
 def _frame(payload) -> bytes:
@@ -68,7 +77,10 @@ class RVCVoiceConverter:
         self._proc = None
         self._stdin = None
         self._stdout = None
-        self._stderr_log_path = os.environ.get("GREAT_SAGE_RVC_LOG", os.path.join(tempfile.gettempdir(), "great-sage-raphael-rvc.log"))
+        self._stderr_log_path = os.environ.get(
+            "GREAT_SAGE_RVC_LOG",
+            os.path.join(tempfile.gettempdir(), "great-sage-raphael-rvc.log"),
+        )
         self._stderr_log = None
 
         executable = python_executable or self._find_python()
@@ -103,7 +115,9 @@ class RVCVoiceConverter:
 
         if response.get("ok") is not True:
             self.close()
-            raise RuntimeError(response.get("error") or "Raphael RVC worker failed to initialize")
+            raise RuntimeError(
+                response.get("error") or "Raphael RVC worker failed to initialize"
+            )
 
     @staticmethod
     def _find_python() -> str:
@@ -116,7 +130,6 @@ class RVCVoiceConverter:
         if os.path.isfile(candidate):
             return candidate
 
-        # Development fallback: allows a manually installed RVC environment.
         return sys.executable
 
     def _raise_worker_failure(self, message: str):
@@ -135,21 +148,64 @@ class RVCVoiceConverter:
     def convert_array(self, samples, sample_rate: int) -> Tuple[np.ndarray, int]:
         if self._proc is None or self._proc.poll() is not None:
             raise RuntimeError("Raphael RVC worker is not running")
+
         audio = np.asarray(samples, dtype=np.float32)
         if audio.ndim > 1:
             audio = np.mean(audio, axis=1)
         audio = np.ascontiguousarray(audio)
-        self._stdin.write(_frame({"op": "convert", "audio": audio, "sample_rate": int(sample_rate)}))
-        self._stdin.flush()
+
+        input_path = None
+        output_path = None
         try:
-            response = _read_frame(self._stdout)
-        except RuntimeError as exc:
-            if self._proc is not None and self._proc.poll() is not None:
-                self._raise_worker_failure("Raphael RVC worker exited during conversion")
-            raise exc
-        if response.get("ok") is not True:
-            raise RuntimeError(response.get("error") or "Raphael RVC conversion failed")
-        return np.asarray(response["audio"], dtype=np.float32).reshape(-1), int(response["sample_rate"])
+            with tempfile.NamedTemporaryFile(
+                suffix=".wav",
+                prefix="great-sage-rvc-in-",
+                delete=False,
+            ) as input_file:
+                input_path = input_file.name
+
+            sf.write(input_path, audio, int(sample_rate), subtype="FLOAT")
+
+            self._stdin.write(_frame({
+                "op": "convert",
+                "input_path": input_path,
+            }))
+            self._stdin.flush()
+
+            try:
+                response = _read_frame(self._stdout)
+            except RuntimeError as exc:
+                if self._proc is not None and self._proc.poll() is not None:
+                    self._raise_worker_failure(
+                        "Raphael RVC worker exited during conversion"
+                    )
+                raise exc
+
+            if response.get("ok") is not True:
+                raise RuntimeError(
+                    response.get("error") or "Raphael RVC conversion failed"
+                )
+
+            output_path = response.get("output_path")
+            if not output_path:
+                raise RuntimeError("Raphael RVC worker returned no output path")
+
+            wav, output_rate = sf.read(
+                output_path,
+                dtype="float32",
+                always_2d=False,
+            )
+            wav = np.asarray(wav, dtype=np.float32)
+            if wav.ndim > 1:
+                wav = np.mean(wav, axis=1)
+            return np.ascontiguousarray(wav.reshape(-1)), int(output_rate)
+        finally:
+            for path in (input_path, output_path):
+                if path:
+                    try:
+                        os.unlink(path)
+                    except OSError:
+                        pass
 
     def close(self):
         if self._stdin is not None:
