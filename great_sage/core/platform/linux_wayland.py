@@ -348,6 +348,9 @@ class PortalHotkey(Hotkey):
                 f"Global shortcut binding request failed with response {code}."
             )
         bound = results.get("shortcuts") or []
+        # dbus-fast exposes a{sv} response values as Variant objects.
+        if hasattr(bound, "value"):
+            bound = bound.value
         ids = {item[0] for item in bound if item}
         if "activate" not in ids:
             raise RuntimeError(
