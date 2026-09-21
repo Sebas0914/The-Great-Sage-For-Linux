@@ -1,0 +1,15 @@
+[Unit]
+Description=The Great Sage desktop assistant
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/The-GREAT-SAGE-master
+ExecStart=%h/The-GREAT-SAGE-master/great-sage.sh run
+Restart=on-failure
+RestartSec=3
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=graphical-session.target
