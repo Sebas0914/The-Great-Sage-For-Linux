@@ -28,18 +28,38 @@
   #caption-box {
     --caption-opacity: 1;
     position: fixed;
-    top: 13%; left: 50%;
+    left: 50%;
+    bottom: 7%;
+    top: auto;
     transform: translateX(-50%);
-    width: min(70%, 640px);
-    padding: 16px 26px;
-    border: 2px solid #ffffff;
+    width: min(72vw, 900px);
+    max-height: calc(3 * 1.35em + 28px);
+    box-sizing: border-box;
+    padding: 12px 22px;
+    border: 1px solid rgba(255,255,255,0.14);
     color: #ffffff;
-    font-family: 'Consolas', monospace;
-    font-size: 16px;
-    line-height: 1.5;
+    font-family: 'Segoe UI', 'Consolas', monospace;
+    font-size: 18px;
+    line-height: 1.35;
     text-align: center;
-    background: #000000;
+    background: rgba(82, 87, 92, 0.72);
+    box-shadow: 0 8px 28px rgba(0,0,0,0.35);
+    border-radius: 2px;
+    overflow: hidden;
     opacity: 0;
+    z-index: 9999;
+    pointer-events: none;
+  }
+  body.desktop-raphael #caption-box {
+    display: block !important;
+    z-index: 9999 !important;
+  }
+  body.desktop-raphael #caption-box .caption-close-btn { display: none; }
+  body.desktop-raphael #caption-text {
+    max-height: calc(3 * 1.35em);
+    overflow: hidden;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
   }
   /* Appears at full opacity immediately - the box itself no longer
      fades or unblurs in. The 700ms materialize used to run at the same
@@ -1809,7 +1829,7 @@ body.mini:hover #mini-exit { opacity: 1; }
 
 <div id="core-pole"></div>
 
-<div id="caption-box">
+<div id="caption-box" class="mini-keep">
   <button class="caption-close-btn" title="Dismiss">✕</button>
   <div id="caption-text"></div>
 </div>
@@ -8019,6 +8039,14 @@ const MINI_CHAT_PAD = 3;
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') hostCall('GS_PANEL_CLOSE');
     });
+  }
+
+  if (DESKTOP_RAPHAEL_MODE) {
+    document.body.classList.add('desktop-raphael');
+    document.documentElement.classList.add('desktop-raphael');
+    applyMiniMode(true);
+    setDesktopTarget(0.89, 0.16);
+    setTimeout(() => { document.title = 'GS_OVERLAY_READY'; }, 0);
   }
 
   if (IS_STANDALONE_OVERLAY) {
