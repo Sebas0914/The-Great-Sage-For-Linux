@@ -753,6 +753,10 @@ RVC_PROTECT = float(os.environ.get("GREAT_SAGE_RVC_PROTECT", "0.33"))
 RVC_PITCH_SEMITONES = int(os.environ.get("GREAT_SAGE_RVC_PITCH_SEMITONES", "0"))
 RVC_DEVICE = os.environ.get("GREAT_SAGE_RVC_DEVICE", "cuda")
 RVC_TAG = os.environ.get("GREAT_SAGE_RVC_TAG", "raphael")
+RVC_PYTHON = os.environ.get(
+    "GREAT_SAGE_RVC_PYTHON",
+    os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), ".rvc-venv", "bin", "python"),
+)
 
 
 # "cuda", "cpu", or None to auto-detect (uses your GPU if torch sees one).
