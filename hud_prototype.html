@@ -5307,6 +5307,9 @@ const MINI_CHAT_PAD = 3;
   // replyBuffer, which is everything the model has WRITTEN - the two
   // deliberately run at different rates.
   let spokenSoFar = '';
+  // When true, the caption renderer is showing the independent Spanish subtitle
+  // supplied by the server rather than the language Raphael is speaking.
+  let spanishSubtitleActive = false;
   let currentServerAudioUrl = null;
   // How long before a clip ends to release the Python side. Speech is
   // generated faster than realtime, so the next clip is usually already
@@ -5416,6 +5419,7 @@ const MINI_CHAT_PAD = 3;
     const msg = JSON.parse(event.data);
     if (msg.type === 'reply_chunk') {
       speechInProgress = true;
+      spanishSubtitleActive = false;
       replyBuffer += msg.text;
       if (captionFollowsSpeech) {
         // Stay in the "thinking" state on purpose. The reply exists, but
@@ -5426,6 +5430,14 @@ const MINI_CHAT_PAD = 3;
         aiThinking = false;
         showCaption(replyBuffer);
       }
+    } else if (msg.type === 'subtitle_text') {
+      // Spanish subtitle is intentionally separate from Raphael's spoken
+      // language. It replaces any per-audio caption so Japanese/English
+      // speech text never leaks into the subtitle layer.
+      spanishSubtitleActive = true;
+      aiThinking = false;
+      spokenSoFar = '';
+      if (msg.text) showCaption(msg.text);
     } else if (msg.type === 'reply_done') {
       // The server sends the FINAL reply text here, which is not always what
       // was streamed: the guardrails can substitute a reply after generation
@@ -5443,21 +5455,21 @@ const MINI_CHAT_PAD = 3;
         maybeNameChat(currentTopic());
       }
     } else if (msg.type === 'audio') {
-      // The words in THIS clip, revealed as it starts playing, so the
-      // caption tracks the voice instead of racing ahead of it.
-      if (captionFollowsSpeech && msg.text) {
+      // AI speech is independent from the manual "Simulate Speech" toggle.
+      // Raphael's real reply must remain audible even when interface/demo
+      // sound effects are disabled.
+      if (captionFollowsSpeech && msg.text && !spanishSubtitleActive) {
         aiThinking = false;
         spokenSoFar = spokenSoFar ? spokenSoFar + ' ' + msg.text : msg.text;
         showCaption(spokenSoFar);
       }
-      if (sfxToggle.checked) {
-        playServerAudio(msg.data, msg.mime);
-      } else if (ws && ws.readyState === WebSocket.OPEN) {
-        // SFX off: nothing will play to trigger the "ended" ack, so tell
-        // the Python side to move on immediately instead of hanging.
-        ws.send(JSON.stringify({ type: 'audio_ended' }));
+      if (spanishSubtitleActive) {
+        aiThinking = false;
       }
+      // Always play server-supplied speech.
+      playServerAudio(msg.data, msg.mime);
     } else if (msg.type === 'speaking_done') {
+      spanishSubtitleActive = false;
       // Safety net for a reply that was never voiced at all - voice
       // disabled, SFX off, or synthesis failed - so the text still
       // reaches the screen instead of the reply finishing invisibly.
@@ -6342,6 +6354,14 @@ const MINI_CHAT_PAD = 3;
     speechAudios.forEach((el) => {
       el.setSinkId(deviceId || '').catch((err) => {
         console.warn('Could not switch audio output device', err);
+        // An output ID can survive a device reconnect while becoming invalid
+        // for QtWebEngine. Recover immediately by routing to the system default
+        // and forget the stale selection instead of leaving speech silent.
+        try { localStorage.removeItem(SPEAKER_DEVICE_STORAGE_KEY); } catch (ignore) {}
+        speakerDeviceSelect.value = '';
+        if (deviceId) {
+          el.setSinkId('').catch(() => {});
+        }
       });
     });
   }
@@ -6392,8 +6412,10 @@ const MINI_CHAT_PAD = 3;
       speakerDeviceNote.textContent = '';
       speakerDetectBtn.hidden = true;
       if (outputs.some((d) => d.deviceId === saved)) {
+        // Keep the selection visible, but do not force it onto the audio graph
+        // during startup. A reconnected Bluetooth/USB device can reuse an old
+        // id that QtWebEngine rejects until the user explicitly selects it.
         speakerDeviceSelect.value = saved;
-        applySpeakerDevice(saved);
       }
     }
   }
