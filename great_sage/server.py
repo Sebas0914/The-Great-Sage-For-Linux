@@ -173,7 +173,8 @@ from great_sage.models.base import ModelProviderError
 from great_sage.voice.base import VoiceError
 from great_sage.voice.speakable import cap_for_speech, speakable
 from great_sage.voice.browser_sink import BrowserAudioSink
-from great_sage.voice.speech_input import PushToTalkRecorder, WakeWordListener
+from great_sage.voice.speech_input import (PushToTalkRecorder, WakeWordListener,
+                                             FollowUpListener)
 
 HOST = "localhost"
 PORT = 8765
@@ -577,7 +578,7 @@ def _deep_review(provider, question, draft):
 
 
 def _handle_chat(text, engine, voice, sink, websocket, loop,
-                 think=False) -> None:
+                 think=False, conversational_follow_up=False) -> None:
     """Runs in its own thread so the async server loop stays free to
     receive the "audio_ended" acks that unblock voice.speak() below.
 
@@ -860,6 +861,13 @@ def _handle_chat(text, engine, voice, sink, websocket, loop,
         # HUD keep the Spanish subtitle as the authoritative caption.
         if subtitle_worker is not None:
             subtitle_worker.join()
+        if conversational_follow_up and voice is not None:
+            try:
+                follow_up_listener.start()
+                log.info("Conversational follow-up listening armed for %.1fs",
+                         follow_up_listener.LISTEN_WINDOW_S)
+            except Exception:
+                log.exception("Could not arm conversational follow-up listener")
 
         timer.finish()
         try:
@@ -895,7 +903,7 @@ def _translate_subtitles(provider, text: str) -> str:
 
 
 def _start_chat_thread(text, engine, voice, sink, websocket, loop,
-                       think=False) -> None:
+                       think=False, conversational_follow_up=False) -> None:
     """Shared by the "chat" message handler and both voice-input paths
     (push-to-talk, wake-word) below - same background-thread dispatch
     either way, so a voice-originated message goes through the exact same
@@ -909,7 +917,7 @@ def _start_chat_thread(text, engine, voice, sink, websocket, loop,
     threading.Thread(
         target=_log_exceptions(_handle_chat, "chat reply"),
         args=(text, engine, voice, sink, websocket, loop),
-        kwargs={"think": think},
+        kwargs={"think": think, "conversational_follow_up": conversational_follow_up},
         daemon=True,
     ).start()
 
@@ -1011,7 +1019,8 @@ async def run_server(engine, voice) -> None:
             return
         if voice is not None:
             voice.set_sink(sink)
-        _start_chat_thread(text, engine, voice, sink, ws, loop)
+        _start_chat_thread(text, engine, voice, sink, ws, loop,
+                       conversational_follow_up=True)
 
     def _send_ptt_state(listening: bool) -> None:
         """Tell the page whether the mic is open.
@@ -1089,6 +1098,17 @@ async def run_server(engine, voice) -> None:
     engine.state_hint = ""
 
     ptt_recorder = PushToTalkRecorder(on_result=_route_voice_text, on_level=_send_mic_level)
+
+    # After a spoken turn, Raphael briefly keeps the microphone open
+    # for a natural follow-up ("sí", "abre VS Code", "ayúdame con eso", etc.).
+    # It is a bounded conversational window, not an always-on microphone.
+    follow_up_listener = FollowUpListener(on_result=lambda text: _route_follow_up(text))
+
+    def _route_follow_up(text: str) -> None:
+        follow_up_listener.stop()
+        _route_voice_text(text)
+
+    follow_up_listener._on_result = _route_follow_up
 
     # The global hotkey drives the SAME recorder the button does, so a
     # voice message started from another window goes down the identical
