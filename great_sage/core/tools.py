@@ -29,9 +29,13 @@ Adding a tool means adding one Tool() to REGISTRY. The schema handed to
 the model, the validation and the dispatch all derive from it.
 """
 
+import base64
 import glob
 import logging
 import os
+import subprocess
+import sys
+import tempfile
 import time
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional
@@ -456,6 +460,41 @@ def take_pending_images() -> List[str]:
     return out
 
 
+def _capture_camera() -> str:
+    """Open the native camera preview for ~3 seconds and keep the final frame."""
+    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    script = os.path.join(root, "camera_window.py")
+    if not os.path.exists(script):
+        raise ToolError("The camera window component is missing.")
+    venv_python = os.path.join(root, ".overlay-venv", "bin", "python")
+    interpreter = venv_python if os.path.exists(venv_python) else sys.executable
+    fd, output = tempfile.mkstemp(prefix="great_sage_camera_", suffix=".jpg")
+    os.close(fd)
+    try:
+        proc = subprocess.run(
+            [interpreter, script, "--output", output, "--seconds", "3"],
+            cwd=root, timeout=12, check=False,
+        )
+        if proc.returncode != 0 or not os.path.exists(output):
+            raise ToolError("The camera could not be opened or no final frame was captured.")
+        with open(output, "rb") as fh:
+            data = fh.read()
+        if not data:
+            raise ToolError("The camera returned an empty frame.")
+        _PENDING_IMAGES.append(base64.b64encode(data).decode())
+        return (
+            "Camera capture completed. The final frame is attached to this turn. "
+            "Give the opinion requested by the user, in Raphael's casual voice; "
+            "do not turn it into a clinical or exhaustive physical description."
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise ToolError("The camera preview timed out.") from exc
+    finally:
+        try:
+            os.unlink(output)
+        except OSError:
+            pass
+
 def _focused_window() -> str:
     if os.name != "nt":
         try:
@@ -549,6 +588,15 @@ def _capture(region: str = "") -> str:
 
 
 REGISTRY.append(Tool(
+    "look_at_camera",
+    "Open the camera for a short live preview, capture the final frame, and "
+    "attach it so you can give the user the opinion they requested about how "
+    "they look. Do not describe them mechanically unless they explicitly ask "
+    "for a description. This tool requires a camera.",
+    {"type": "object", "properties": {}},
+    _capture_camera, SAFE))
+
+REGISTRY.append(Tool(
     "look_at_screen",
     "Take a screenshot so you can SEE the user's screen, then answer from "
     "what is visible. Use whenever the user asks what something on screen "
@@ -569,6 +617,8 @@ REGISTRY.append(Tool(
 BY_NAME = {t.name: t for t in REGISTRY}
 _TRIGGERS = _TRIGGERS + (
     "screen", "look at", "see this", "what does this", "read this",
+    "camera", "look at me", "look at myself", "how do i look", "how do i look like",
+    "mírame", "mirame", "cómo me veo", "como me veo",
     "on my screen", "screenshot", "this error", "focused", "what am i",
     "what is this", "whats this", "translate",
 )
@@ -759,6 +809,9 @@ _PREROUTE = (
     (_re.compile(r"\b(what|which)\s+(app|application|program|window)\s+"
                  r"(am\s+i|is)\b|\bwhat\s+am\s+i\s+(in|using)\b", _re.I),
      "get_focused_window", {}),
+    (_re.compile(r"\b(look at me|look at myself|how do i look|camera)\b|"
+                 r"\b(mírame|mirame|cómo me veo|como me veo)\b", _re.I),
+     "look_at_camera", {}),
     (_re.compile(r"\b(look at|check|read)\s+(my\s+)?screen\b|"
                  r"\bwhats?\s+on\s+(my\s+)?screen\b|"
                  r"\bwhat\s+(do\s+you\s+)?see\b", _re.I),
