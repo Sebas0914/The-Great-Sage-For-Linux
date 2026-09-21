@@ -855,9 +855,12 @@ def _handle_chat(text, engine, voice, sink, websocket, loop,
     except websockets.exceptions.ConnectionClosed:
         log.warning("Connection closed while sending audio for reply to %r", text)
     finally:
-        # The subtitle worker sends its result independently; do not wait for
-        # it here, otherwise a slow translation would delay speaking_done and
-        # keep the HUD in its speech state unnecessarily.
+        # Wait for the Spanish subtitle before marking the turn complete.
+        # This prevents speaking_done from racing subtitle_text and lets the
+        # HUD keep the Spanish subtitle as the authoritative caption.
+        if subtitle_worker is not None:
+            subtitle_worker.join()
+
         timer.finish()
         try:
             send({"type": "speaking_done"})
