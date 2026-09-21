@@ -589,6 +589,13 @@ TASKS_PATH = _user_file("tasks.json")
 # Set to "" to switch it off.
 GLOBAL_HOTKEY = os.environ.get("GREAT_SAGE_HOTKEY", "alt+1")
 
+# Proper names Whisper should preserve in voice commands. This is only a
+# decoding hint; the recognized speech is still determined from the audio.
+STT_INITIAL_PROMPT = os.environ.get(
+    "GREAT_SAGE_STT_INITIAL_PROMPT",
+    "Raphael. Rafael. Great Sage. Ciel. Gran Sabio.",
+)
+
 # How long Ollama holds the model in VRAM after a reply, in seconds.
 #
 # Ollama defaults to 300 (five minutes). Measured here, the model is
