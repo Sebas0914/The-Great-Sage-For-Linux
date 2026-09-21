@@ -292,14 +292,36 @@ class PortalHotkey(Hotkey):
             )
         return session
 
+    @staticmethod
+    def _portal_trigger(binding: str) -> str:
+        """Convert the saved HUD combo to XDG shortcut-spec syntax."""
+        parts = [p.strip() for p in str(binding or "").replace(" ", "+").split("+") if p.strip()]
+        if not parts:
+            return ""
+        modifiers = {
+            "ctrl": "CTRL",
+            "control": "CTRL",
+            "alt": "ALT",
+            "shift": "SHIFT",
+            "meta": "LOGO",
+            "super": "LOGO",
+            "logo": "LOGO",
+            "num": "NUM",
+        }
+        out = []
+        for part in parts[:-1]:
+            out.append(modifiers.get(part.casefold(), part.upper()))
+        return "+".join([*out, parts[-1]])
+
     async def _bind_shortcuts(self, bus, iface, Variant, session):
         token = f"great_sage_bind_{id(self)}"
+        trigger = self._portal_trigger(self.binding)
+        if not trigger:
+            raise RuntimeError("Push-to-talk binding is empty.")
         shortcuts = [{
             "id": "activate",
             "description": "Activate Great Sage",
-            "preferred_trigger": Variant(
-                "s", self.binding.replace(" ", "+")
-            ),
+            "preferred_trigger": Variant("s", trigger),
         }]
         request_path = await iface.call_bind_shortcuts(
             session, shortcuts, "",
@@ -311,8 +333,13 @@ class PortalHotkey(Hotkey):
             raise RuntimeError(
                 f"Global shortcut binding request failed with response {code}."
             )
+        bound = results.get("shortcuts") or []
+        ids = {item[0] for item in bound if item}
+        if "activate" not in ids:
+            raise RuntimeError(
+                f"Global shortcut was not accepted by the desktop portal (requested {trigger!r})."
+            )
         return results
-
     async def _worker(self):
         from dbus_fast import Variant
         from dbus_fast.aio import MessageBus
