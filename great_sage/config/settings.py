@@ -776,6 +776,9 @@ RVC_OUTPUT_GAIN_DB = float(os.environ.get("GREAT_SAGE_RVC_OUTPUT_GAIN_DB", "0.0"
 # audible "effect"; it restores consonant/transient detail when the trained
 # voice model introduces a little high-frequency grain or pitch residue.
 RVC_DRY_MIX = float(os.environ.get("GREAT_SAGE_RVC_DRY_MIX", "0.10"))
+# Gentle post-RVC clarity correction: reduce boxy/horn coloration and restore
+# a little presence without a large treble boost that would expose hiss.
+RVC_CLARITY_EQ = os.environ.get("GREAT_SAGE_RVC_CLARITY_EQ", "true").lower() in {"1", "true", "yes", "on"}
 RVC_DEVICE = os.environ.get("GREAT_SAGE_RVC_DEVICE", "cuda")
 RVC_TAG = os.environ.get("GREAT_SAGE_RVC_TAG", "raphael")
 RVC_PYTHON = os.environ.get(
