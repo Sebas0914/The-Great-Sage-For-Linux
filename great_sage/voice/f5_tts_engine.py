@@ -307,6 +307,7 @@ class F5TTSVoiceOutput(VoiceOutput):
                     index_rate=settings.RVC_INDEX_RATE,
                     protect=settings.RVC_PROTECT,
                     pitch_semitones=settings.RVC_PITCH_SEMITONES,
+                    output_gain_db=settings.RVC_OUTPUT_GAIN_DB,
                     device=settings.RVC_DEVICE,
                     tag=settings.RVC_TAG,
                 )
