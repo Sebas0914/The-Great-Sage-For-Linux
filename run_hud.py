@@ -411,6 +411,16 @@ class _HudHostApi:
             log.exception("close failed")
             return False
 
+    def hide_app(self) -> bool:
+        """Hide the HUD without stopping Great Sage's backend."""
+        try:
+            self._window.hide()
+            log.info("HUD hidden; Great Sage backend remains running")
+            return True
+        except Exception:
+            log.exception("hide_app failed")
+            return False
+
     # ---- the transparent overlay, hosted in its own process -----------
     def _overlay_command(self):
         """How to launch overlay_window.py, frozen or from source."""
@@ -705,20 +715,37 @@ def main() -> int:
     # APIs, so start with a normal native window there. The HUD remains
     # fully usable; advanced click-through overlay controls stay Windows-
     # specific until a native Linux overlay host is implemented.
-    window_kwargs = {
-        "width": 1920,
-        "height": 1080,
-        "background_color": "#030b08",
-        "js_api": api,
-        "resizable": True,
-    }
+    # Linux uses the compact desktop Raphael mode. pywebview's Qt backend
+    # supports transparent windows on Linux, so the existing mini renderer
+    # can sit over the desktop instead of leaving a 1920x1080 dark panel.
+    # Windows keeps the original full HUD for now.
     if os.name == "nt":
-        window_kwargs.update({
+        window_kwargs = {
+            "width": 1920,
+            "height": 1080,
+            "background_color": "#030b08",
+            "js_api": api,
+            "resizable": True,
             "transparent": True,
             "frameless": True,
             "easy_drag": False,
-        })
-    window = webview.create_window("Great Sage", html_path, **window_kwargs)
+        }
+        window_url = html_path
+    else:
+        window_kwargs = {
+            "width": 1920,
+            "height": 1080,
+            "background_color": "#000000",
+            "js_api": api,
+            "resizable": False,
+            "transparent": True,
+            "frameless": True,
+            "focus": False,
+            "on_top": True,
+            "fullscreen": True,
+        }
+        window_url = html_path + "?desktop=1"
+    window = webview.create_window("Great Sage", window_url, **window_kwargs)
     api.attach(window)
 
     # Centre the window once the page is up.
@@ -740,7 +767,12 @@ def main() -> int:
                 api.set_resizable(True)
             api.fix_host_background()
         else:
-            log.info("Linux HUD: using the native webview window host")
+            # Wayland deliberately does not allow clients to reposition
+            # top-level windows themselves. The Linux HUD therefore uses a
+            # single fullscreen transparent surface and moves Raphael
+            # INSIDE that surface; this is what makes arbitrary diagonal
+            # movement possible without fighting the compositor.
+            log.info("Linux HUD: desktop Raphael mode enabled (Wayland)")
 
     try:
         window.events.loaded += _centre_window
@@ -754,7 +786,10 @@ def main() -> int:
     debug = os.environ.get("GREAT_SAGE_DEBUG", "").strip() not in ("", "0")
     if debug:
         log.info("Devtools enabled (GREAT_SAGE_DEBUG is set)")
-    webview.start(debug=debug)
+    if os.name == "nt":
+        webview.start(debug=debug)
+    else:
+        webview.start(debug=debug, gui="qt")
     return 0
 
 
