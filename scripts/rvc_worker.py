@@ -10,9 +10,11 @@ import argparse
 import pickle
 import struct
 import sys
+import tempfile
 import traceback
 
 import numpy as np
+import soundfile as sf
 
 
 def send(stream, payload):
@@ -78,16 +80,40 @@ def main() -> int:
                 raise ValueError(f"unknown RVC worker operation: {request.get('op')!r}")
 
             audio = np.asarray(request["audio"], dtype=np.float32)
-            result, sample_rate = converter.generate_from_cache(
-                audio_data=(audio, int(request["sample_rate"])),
-                tag=args.tag,
-            )
+            sample_rate = int(request["sample_rate"])
+
+            # Use a temporary WAV for inference instead of passing an in-memory
+            # tuple. infer_rvc_python supports both forms, but its Harvest F0
+            # implementation explicitly rejects tuple/array input. Using a
+            # file path also keeps all pitch backends on the same code path.
+            temp_path = None
+            try:
+                with tempfile.NamedTemporaryFile(
+                    suffix=".wav",
+                    prefix="great-sage-rvc-",
+                    delete=False,
+                ) as temp_file:
+                    temp_path = temp_file.name
+
+                sf.write(temp_path, audio, sample_rate, subtype="FLOAT")
+                result, output_rate = converter.generate_from_cache(
+                    audio_data=temp_path,
+                    tag=args.tag,
+                )
+            finally:
+                if temp_path:
+                    try:
+                        import os
+                        os.unlink(temp_path)
+                    except OSError:
+                        pass
+
             send(
                 sys.stdout.buffer,
                 {
                     "ok": True,
                     "audio": np.asarray(result, dtype=np.float32).reshape(-1),
-                    "sample_rate": int(sample_rate),
+                    "sample_rate": int(output_rate),
                 },
             )
         except Exception as exc:
