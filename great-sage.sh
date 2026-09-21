@@ -85,12 +85,26 @@ stop() {
 }
 
 status() {
-  if is_running; then echo "Great Sage: RUNNING (PID $(cat "$PIDFILE"))"; else echo "Great Sage: STOPPED"; fi
+  if [ -f "$UNIT_DST" ] && command -v systemctl >/dev/null 2>&1; then
+    if systemctl --user is-active --quiet great-sage.service; then
+      local pid
+      pid="$(systemctl --user show -p MainPID --value great-sage.service)"
+      echo "Great Sage: RUNNING (PID $pid)"
+    else
+      echo "Great Sage: STOPPED"
+    fi
+  elif is_running; then
+    echo "Great Sage: RUNNING (PID $(cat "$PIDFILE"))"
+  else
+    echo "Great Sage: STOPPED"
+  fi
   if [ -f "$OVERLAY_PIDFILE" ]; then
     local opid
     opid="$(cat "$OVERLAY_PIDFILE" 2>/dev/null || true)"
     if [ -n "$opid" ] && kill -0 "$opid" 2>/dev/null; then echo "Raphael overlay: RUNNING (PID $opid)"; else echo "Raphael overlay: HIDDEN/NOT RUNNING"; fi
-  else echo "Raphael overlay: HIDDEN/NOT RUNNING"; fi
+  else
+    echo "Raphael overlay: HIDDEN/NOT RUNNING"
+  fi
 }
 
 case "${1:-}" in
