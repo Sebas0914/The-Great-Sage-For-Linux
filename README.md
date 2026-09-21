@@ -46,9 +46,9 @@ Desktop tools use platform adapters rather than embedding Windows-only APIs in t
 
 The intended local voice path is:
 
-`speech -> faster-whisper -> Great Sage -> F5-TTS`
+`speech -> faster-whisper -> Great Sage -> F5-TTS -> Raphael RVC v2`
 
-Speech recognition is local. F5-TTS is local and GPU acceleration is preferred.
+Speech recognition is local. F5-TTS is local and GPU acceleration is preferred. When the Raphael RVC assets are installed, the generated audio is post-processed through the Raphael RVC v2 model using RMVPE, index rate 0.8, and consonant protection 0.33. The third-party weights are not bundled.
 
 ## Install
 
@@ -87,7 +87,8 @@ great_sage/
     ollama_provider.py local provider
   voice/
     speech_to_text.py local faster-whisper STT
-    f5_tts_engine.py  local F5-TTS output
+    f5_tts_engine.py  local F5-TTS output + optional Raphael RVC stage
+    rvc.py             local RVC v2 post-processing adapter
 
 check_*.py             CI regression/contract checks
 .github/workflows/      Linux CI
@@ -113,7 +114,8 @@ CI runs these checks on the Linux development branch and pull requests.
 - The original transparent/click-through overlay host is Windows-specific. Linux currently uses the normal native HUD window rather than pretending the Win32 overlay works.
 - Screen capture depends on KDE Spectacle being available.
 - NVIDIA-hosted AI requires an API key and network access.
-- F5-TTS and faster-whisper have substantial model/runtime dependencies.
+- F5-TTS, faster-whisper, and the optional Raphael RVC stage have substantial model/runtime dependencies.
+- Raphael RVC model assets are third-party and must be installed separately; they are not downloaded by Great Sage.
 - Image generation is not implemented.
 
 ## License and assets
