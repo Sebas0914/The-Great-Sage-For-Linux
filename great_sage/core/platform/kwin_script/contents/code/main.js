@@ -11,32 +11,36 @@ const PATH = "/org/greatsage/KWinBridge";
 const INTERFACE = "org.greatsage.KWinBridge";
 
 function report(window) {
-    if (!window) {
-        callDBus(SERVICE, PATH, INTERFACE, "SetActiveWindow", "", 0);
-        return;
-    }
+    const title = window ? (window.caption || "") : "";
+    const pid = window ? Number(window.pid || 0) : 0;
 
-    const title = window.caption || "";
-    const pid = Number(window.pid || 0);
-    callDBus(SERVICE, PATH, INTERFACE, "SetActiveWindow", title, pid);
+    /*
+     * Great Sage may not have started when KWin loads this script. A failed
+     * D-Bus call must not terminate the KWin script, because the service can
+     * appear later. The periodic reporter below will retry automatically.
+     */
+    try {
+        callDBus(SERVICE, PATH, INTERFACE, "SetActiveWindow", title, pid);
+    } catch (error) {
+        // Service unavailable yet; keep the script alive and retry later.
+    }
 }
 
 function reportCurrent() {
     report(workspace.activeWindow);
 }
 
-workspace.windowActivated.connect(report);
-reportCurrent();
+workspace.windowActivated.connect(function(window) {
+    report(window);
+});
 
 /*
- * Great Sage may start after the KWin script. Retry briefly so the initial
- * active window is not lost; normal updates still come from windowActivated.
+ * Report immediately and keep polling so startup order does not matter:
+ * KWin can load the script before Great Sage, or Great Sage can start later.
+ * The active window is only title/PID metadata; no keyboard input is observed.
  */
-let retries = 0;
+reportCurrent();
+
 const retryTimer = setInterval(function() {
     reportCurrent();
-    retries += 1;
-    if (retries >= 10) {
-        clearInterval(retryTimer);
-    }
 }, 1000);
