@@ -1,6 +1,5 @@
 [Unit]
 Description=The Great Sage desktop assistant
-After=graphical-session.target
 PartOf=graphical-session.target
 
 [Service]
