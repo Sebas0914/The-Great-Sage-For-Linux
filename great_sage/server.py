@@ -799,6 +799,21 @@ def _handle_chat(text, engine, voice, sink, websocket, loop,
         return
 
     try:
+        # Subtitles are an independent Spanish rendering of the delivered
+        # reply. Generate them in parallel with F5/RVC so the extra model call
+        # does not have to block the start of speech.
+        subtitle_result = [""]
+        subtitle_worker = None
+        if guarded.strip():
+            subtitle_worker = threading.Thread(
+                target=lambda: subtitle_result.__setitem__(
+                    0, _translate_subtitles(engine.provider, guarded)
+                ),
+                daemon=True,
+                name="spanish-subtitles",
+            )
+            subtitle_worker.start()
+
         if speaker is not None:
             end_stream()
             if speech_error:
@@ -835,11 +850,44 @@ def _handle_chat(text, engine, voice, sink, websocket, loop,
     except websockets.exceptions.ConnectionClosed:
         log.warning("Connection closed while sending audio for reply to %r", text)
     finally:
+        if 'subtitle_worker' in locals() and subtitle_worker is not None:
+            subtitle_worker.join(timeout=30)
+            if subtitle_result[0]:
+                try:
+                    send({"type": "subtitle_text", "text": subtitle_result[0]})
+                except websockets.exceptions.ConnectionClosed:
+                    pass
         timer.finish()
         try:
             send({"type": "speaking_done"})
         except websockets.exceptions.ConnectionClosed:
             pass
+
+
+def _translate_subtitles(provider, text: str) -> str:
+    """Translate the delivered reply to Spanish for HUD subtitles only.
+
+    This never changes the spoken text or the model's conversation history.
+    It is deliberately a separate, instruction-only provider call so the
+    language shown on screen can differ from Raphael's spoken language.
+    """
+    value = (text or "").strip()
+    if not value:
+        return ""
+    prompt = (
+        "Translate the following Great Sage reply into natural, concise Spanish "
+        "for on-screen subtitles. Preserve names, numbers, code, and technical "
+        "meaning. Do not add, omit, explain, or answer anything. Return ONLY "
+        "the Spanish translation, with no quotes and no preamble.\n\n"
+        "REPLY:\n" + value
+    )
+    try:
+        translated = provider.send_message([{"role": "user", "content": prompt}])
+    except Exception:
+        log.exception("Spanish subtitle translation failed")
+        return value
+    translated = (translated or "").strip()
+    return translated or value
 
 
 def _start_chat_thread(text, engine, voice, sink, websocket, loop,
