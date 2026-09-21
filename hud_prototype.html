@@ -4466,6 +4466,10 @@ Hey Ciel</textarea>
     panel.style.top = top + 'px';
   }
 
+  window.__desktopCoreScreenPosition = () =>
+    DESKTOP_RAPHAEL_MODE ? coreScreenPosition() : null;
+  window.__desktopSetHoverFromHost = (hovered) => setDesktopHover(!!hovered);
+
   function setDesktopHover(hovered) {
     if (!DESKTOP_RAPHAEL_MODE || hovered === desktopHovered) return;
     desktopHovered = hovered;
@@ -8091,8 +8095,13 @@ const MINI_CHAT_PAD = 3;
   window.__enterMini = enterMini;
 
   document.getElementById('btn-mini').addEventListener('click', enterMini);
-  document.getElementById('mini-exit').addEventListener('click',
-    () => DESKTOP_RAPHAEL_MODE ? callHost('hide_app') : exitMini());
+  document.getElementById('mini-exit').addEventListener('click', () => {
+    if (DESKTOP_RAPHAEL_MODE) {
+      document.title = 'GS_HIDE_OVERLAY';
+    } else {
+      exitMini();
+    }
+  });
 
   // ---- Window controls (there is no native title bar) ----
   document.getElementById('win-min').addEventListener('click',
