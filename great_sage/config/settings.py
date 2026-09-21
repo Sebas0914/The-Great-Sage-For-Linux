@@ -692,7 +692,7 @@ F5_RVC_LOCK_JAPANESE_REFERENCE = (
 # ~0.8s sooner - but a listening A/B rejected 4 outright as clearly
 # degraded. 8 is the floor for acceptable quality on this voice, not
 # merely a default nobody revisited.
-F5_NFE_STEP = 8
+F5_NFE_STEP = 16
 
 # Synthesize the whole reply as ONE clip, rather than streaming it out in
 # sentence-sized chunks as the model writes.
@@ -772,6 +772,10 @@ RVC_INDEX_RATE = float(os.environ.get("GREAT_SAGE_RVC_INDEX_RATE", "0.8"))
 RVC_PROTECT = float(os.environ.get("GREAT_SAGE_RVC_PROTECT", "0.33"))
 RVC_PITCH_SEMITONES = int(os.environ.get("GREAT_SAGE_RVC_PITCH_SEMITONES", "0"))
 RVC_OUTPUT_GAIN_DB = float(os.environ.get("GREAT_SAGE_RVC_OUTPUT_GAIN_DB", "0.0"))
+# Keep a small amount of the clean F5 signal after RVC. This is not an
+# audible "effect"; it restores consonant/transient detail when the trained
+# voice model introduces a little high-frequency grain or pitch residue.
+RVC_DRY_MIX = float(os.environ.get("GREAT_SAGE_RVC_DRY_MIX", "0.10"))
 RVC_DEVICE = os.environ.get("GREAT_SAGE_RVC_DEVICE", "cuda")
 RVC_TAG = os.environ.get("GREAT_SAGE_RVC_TAG", "raphael")
 RVC_PYTHON = os.environ.get(
