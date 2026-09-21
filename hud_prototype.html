@@ -5344,43 +5344,26 @@ const MINI_CHAT_PAD = 3;
   function playServerAudio(base64Data, mime) {
     const el = pickSpeechElement();
 
-    // Revoke this element's PREVIOUS url, not the most recent one
-    // globally - the other element may still be playing that.
     if (el.dataset.blobUrl) URL.revokeObjectURL(el.dataset.blobUrl);
     const url = URL.createObjectURL(base64ToBlob(base64Data, mime));
     el.dataset.blobUrl = url;
     currentServerAudioUrl = url;
-    const voiceLineAudio = el;   // the rest of this function acts on it
+    const voiceLineAudio = el;
     voiceLineAudio.src = url;
     voiceLineAudio.currentTime = 0;
 
     // Exactly one ack per clip. Python clears its wait flag before each
-    // send, so a duplicate arriving late would unblock the NEXT clip
-    // early and cut it off - hence the latch rather than a bare send.
+    // send, so a duplicate arriving late would unblock the NEXT clip.
     let acked = false;
     const ack = () => {
       if (acked) return;
       acked = true;
-      // The url is NOT revoked here. Each element releases its own
-      // previous url on its next use instead, which stays correct whether
-      // or not the ack leads the end of the clip - revoking here would be
-      // safe only while AUDIO_ACK_LEAD_SECONDS is 0.
       if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: 'audio_ended' }));
       }
     };
     voiceLineAudio.onended = ack;
-    // Release Python a fraction before the end, so the following chunk
-    // can be generated, sent, and started while this one is still
-    // ringing out. The 'ended' handler above stays as the backstop for
-    // clips shorter than the lead, and for anything that never reports
-    // a duration.
-    // The early ack exists ONLY to overlap the next chunk with this
-    // one's tail. With whole-reply synthesis there is no next chunk, so
-    // it buys nothing and costs something real: the server considers the
-    // reply finished - and sends speaking_done - while audio is still
-    // sounding, which made the UI react as though speech had ended.
-    // Acking on 'ended' keeps the two in step.
+
     if (AUDIO_ACK_LEAD_SECONDS > 0) {
       voiceLineAudio.ontimeupdate = () => {
         const dur = voiceLineAudio.duration;
@@ -5388,31 +5371,63 @@ const MINI_CHAT_PAD = 3;
         if (dur - voiceLineAudio.currentTime <= AUDIO_ACK_LEAD_SECONDS) ack();
       };
     }
-    // Without this, a clip that fails to decode/play leaves speak() on
-    // the Python side blocked for its full 30s ack timeout and then
-    // raising - the reply is lost and every later one is delayed.
+
     voiceLineAudio.onerror = () => {
       console.warn('Reply audio failed to play', voiceLineAudio.error);
       ack();
     };
 
-    // THE important line. voiceLineAudio is routed through
-    // createMediaElementSource into audioCtx (for the amplitude-reactive
-    // pulse), so its sound reaches the speakers ONLY via that graph. A
-    // suspended AudioContext therefore means silence AND no 'ended'
-    // event - the element never progresses - which looked exactly like
-    // "the AI stopped talking". Chromium starts every AudioContext
-    // suspended until a user gesture, and while typing a message routed
-    // through sendChatMessage() (which resumes it), push-to-talk and the
-    // wake word did not. Resuming here covers every path that can
-    // produce audio, since they all funnel through this function.
-    Promise.resolve(audioCtx.state === 'suspended' ? audioCtx.resume() : null)
-      .catch(() => {})  // resume() rejects if no gesture has happened yet
-      .then(() => voiceLineAudio.play())
-      .catch((err) => {
-        console.warn('Reply audio playback rejected', err);
+    // QtWebEngine/Chromium can keep the AudioContext suspended when a reply
+    // was triggered by the wake word instead of a browser gesture. A
+    // MediaElementSource connected to that suspended context cannot reach
+    // the speakers, so the old code could leave Python waiting for
+    // "audio_ended" until its timeout. Prefer the analyser graph whenever
+    // possible; otherwise use a plain HTMLAudioElement as a reliable
+    // playback fallback. The fallback does not feed the analyser, but it
+    // keeps voice playback and the server acknowledgement working.
+    const playDirectFallback = () => {
+      const fallback = new Audio(url);
+      fallback.volume = voiceLineAudio.volume;
+      fallback.preload = 'auto';
+      let cleaned = false;
+      const finishFallback = () => {
+        if (cleaned) return;
+        cleaned = true;
+        fallback.onended = null;
+        fallback.onerror = null;
+        try { fallback.pause(); } catch (err) {}
         ack();
+      };
+      fallback.onended = finishFallback;
+      fallback.onerror = () => {
+        console.warn('Direct reply audio failed to play', fallback.error);
+        finishFallback();
+      };
+      fallback.play().catch((err) => {
+        console.warn('Direct reply audio playback rejected', err);
+        finishFallback();
       });
+    };
+
+    const playThroughGraph = () => {
+      voiceLineAudio.play().catch((err) => {
+        console.warn('Reply audio playback rejected', err);
+        playDirectFallback();
+      });
+    };
+
+    if (audioCtx.state === 'running') {
+      playThroughGraph();
+    } else {
+      audioCtx.resume()
+        .then(() => {
+          if (audioCtx.state === 'running') playThroughGraph();
+          else playDirectFallback();
+        })
+        .catch(() => {
+          playDirectFallback();
+        });
+    }
   }
 
   function handleServerMessage(event) {
