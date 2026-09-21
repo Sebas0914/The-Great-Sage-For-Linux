@@ -428,7 +428,7 @@ PERSONA_PHRASES = [
         "reports; execution lies outside it.",
     ),
     (
-        "asked how you are, or whether you are working correctly",
+        "explicitly asks whether Great Sage is functioning correctly, whether all faculties are operational, or requests a system-status check",
         "All faculties nominal.",
     ),
     (
