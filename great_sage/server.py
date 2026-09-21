@@ -1689,3 +1689,25 @@ async def run_server(engine, voice) -> None:
     async with websockets.serve(handler, HOST, PORT, max_size=16 * 1024 * 1024):
         log.info("WebSocket bridge listening on ws://%s:%s", HOST, PORT)
         await asyncio.Future()  # run until the process exits
+
+
+
+def main() -> int:
+    """Build the configured Great Sage runtime and keep the HUD bridge alive."""
+    from main import build_memory_callback, build_provider, build_system_prompt, build_voice
+    from great_sage.core.chat_engine import ChatEngine
+
+    provider = build_provider()
+    voice = build_voice(provider)
+    engine = ChatEngine(
+        provider,
+        build_system_prompt(),
+        idle_reset_seconds=settings.SESSION_IDLE_RESET_MINUTES * 60,
+        on_session_boundary=build_memory_callback(provider),
+    )
+    asyncio.run(run_server(engine, voice))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
