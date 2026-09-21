@@ -587,7 +587,7 @@ TASKS_PATH = _user_file("tasks.json")
 # system-wide keyboard hook was deliberately NOT used.
 #
 # Set to "" to switch it off.
-GLOBAL_HOTKEY = os.environ.get("GREAT_SAGE_HOTKEY", "ctrl+alt+s")
+GLOBAL_HOTKEY = os.environ.get("GREAT_SAGE_HOTKEY", "alt+1")
 
 # How long Ollama holds the model in VRAM after a reply, in seconds.
 #
