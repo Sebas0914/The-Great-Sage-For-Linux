@@ -74,7 +74,7 @@ OLLAMA_HOST = os.environ.get("GREAT_SAGE_OLLAMA_HOST", "http://localhost:11434")
 #
 # To go back without editing this file:
 #   set GREAT_SAGE_OLLAMA_MODEL=<some other pulled model>
-OLLAMA_DEFAULT_MODEL = os.environ.get("GREAT_SAGE_OLLAMA_MODEL", "qwen3.5:4b")
+OLLAMA_DEFAULT_MODEL = os.environ.get("GREAT_SAGE_OLLAMA_MODEL", "qwen2.5:7b-instruct")
 
 # Reasoning models deliberate before answering, and Ollama streams that
 # deliberation on a separate channel - so the content stream stays silent
