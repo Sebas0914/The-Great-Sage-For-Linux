@@ -5469,7 +5469,10 @@ const MINI_CHAT_PAD = 3;
       // Always play server-supplied speech.
       playServerAudio(msg.data, msg.mime);
     } else if (msg.type === 'speaking_done') {
-      spanishSubtitleActive = false;
+      // Spanish subtitles are authoritative for this turn. Keep the flag
+      // set until after the fallback decision so the original reply cannot
+      // overwrite a Spanish subtitle when the turn finishes.
+      
       // Safety net for a reply that was never voiced at all - voice
       // disabled, SFX off, or synthesis failed - so the text still
       // reaches the screen instead of the reply finishing invisibly.
@@ -5483,7 +5486,7 @@ const MINI_CHAT_PAD = 3;
       // full text no longer starts with what was already on screen,
       // showCaption cleared the bar and retyped the whole thing just as
       // the audio finished.
-      if (captionFollowsSpeech && replyBuffer && !spokenSoFar) {
+      if (captionFollowsSpeech && replyBuffer && !spokenSoFar && !spanishSubtitleActive) {
         showCaption(replyBuffer);
       }
       // UNCONDITIONAL. Speaking being finished means the turn is over,
@@ -5499,6 +5502,7 @@ const MINI_CHAT_PAD = 3;
       // start its countdown.
       speechInProgress = false;
       if (captionMode === 'bar') scheduleBarCaptionAutoHide();
+      spanishSubtitleActive = false;
     } else if (msg.type === 'error') {
       aiThinking = false; // safety net - no reply is coming for this one
       speechInProgress = false;
