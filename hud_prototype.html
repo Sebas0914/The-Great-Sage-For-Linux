@@ -5016,8 +5016,32 @@ const MINI_CHAT_PAD = 3;
     }, 22);
   }
 
+  function showDesktopSubtitle(text) {
+    if (!text) return;
+    const el = document.getElementById('caption-text');
+    const box = document.getElementById('caption-box');
+    if (!el || !box) return;
+    box.classList.add('show');
+    el.textContent = text;
+    const maxHeight = parseFloat(getComputedStyle(el).lineHeight) * 3;
+    el.style.maxHeight = maxHeight + 'px';
+    // Keep a rolling three-line window. Once a fourth line would appear,
+    // rebuild from the current point rather than letting the subtitle cover
+    // Raphael or the desktop.
+    let guard = 0;
+    while (el.scrollHeight > maxHeight + 1 && el.textContent && guard++ < 400) {
+      const value = el.textContent;
+      const cut = value.indexOf(' ');
+      el.textContent = cut >= 0 ? value.slice(cut + 1) : value.slice(1);
+    }
+  }
+
   function showCaption(text) {
     if (!captionEnabled) return;
+    if (DESKTOP_RAPHAEL_MODE) {
+      showDesktopSubtitle(text);
+      return;
+    }
     // In the overlay the normal caption treatments are hidden by the
     // "keep only the visuals" rule, so replies would land nowhere. Route
     // them to the bubble instead - it is the caption, at overlay scale.
@@ -5613,6 +5637,48 @@ const MINI_CHAT_PAD = 3;
   // When true, the caption renderer is showing the independent Spanish subtitle
   // supplied by the server rather than the language Raphael is speaking.
   let spanishSubtitleActive = false;
+  let desktopSubtitleSource = '';
+  let desktopSubtitleShown = '';
+  let desktopSubtitleQueue = '';
+  let desktopSubtitleTimer = null;
+
+  function startDesktopSubtitleTyping() {
+    if (!DESKTOP_RAPHAEL_MODE || desktopSubtitleTimer || !desktopSubtitleSource) return;
+    desktopSubtitleTimer = setInterval(() => {
+      if (!desktopSubtitleQueue.length) {
+        clearInterval(desktopSubtitleTimer);
+        desktopSubtitleTimer = null;
+        return;
+      }
+      desktopSubtitleShown += desktopSubtitleQueue[0];
+      desktopSubtitleQueue = desktopSubtitleQueue.slice(1);
+      showDesktopSubtitle(desktopSubtitleShown);
+    }, 34);
+  }
+
+  function setDesktopSubtitleSource(text) {
+    if (!DESKTOP_RAPHAEL_MODE) return;
+    desktopSubtitleSource = String(text || '').trim();
+    desktopSubtitleShown = '';
+    desktopSubtitleQueue = desktopSubtitleSource;
+    if (speechInProgress) startDesktopSubtitleTyping();
+  }
+
+  function finishDesktopSubtitle() {
+    if (!DESKTOP_RAPHAEL_MODE) return;
+    if (desktopSubtitleTimer) {
+      clearInterval(desktopSubtitleTimer);
+      desktopSubtitleTimer = null;
+    }
+    desktopSubtitleShown = desktopSubtitleSource;
+    desktopSubtitleQueue = '';
+    if (desktopSubtitleShown) showDesktopSubtitle(desktopSubtitleShown);
+    setTimeout(() => {
+      const box = document.getElementById('caption-box');
+      if (box && !speechInProgress) box.classList.remove('show');
+    }, 900);
+  }
+
   let currentServerAudioUrl = null;
   // How long before a clip ends to release the Python side. Speech is
   // generated faster than realtime, so the next clip is usually already
@@ -5749,13 +5815,12 @@ const MINI_CHAT_PAD = 3;
         showCaption(replyBuffer);
       }
     } else if (msg.type === 'subtitle_text') {
-      // Spanish subtitle is intentionally separate from Raphael's spoken
-      // language. It replaces any per-audio caption so Japanese/English
-      // speech text never leaks into the subtitle layer.
+      // Keep the complete Spanish translation in a buffer; the visible
+      // text is typed while Raphael is actually speaking.
       spanishSubtitleActive = true;
       aiThinking = false;
       spokenSoFar = '';
-      if (msg.text) showCaption(msg.text);
+      setDesktopSubtitleSource(msg.text || '');
     } else if (msg.type === 'reply_done') {
       // The server sends the FINAL reply text here, which is not always what
       // was streamed: the guardrails can substitute a reply after generation
@@ -5773,6 +5838,13 @@ const MINI_CHAT_PAD = 3;
         maybeNameChat(currentTopic());
       }
     } else if (msg.type === 'audio') {
+      if (DESKTOP_RAPHAEL_MODE && spanishSubtitleActive) {
+        startDesktopSubtitleTyping();
+        if (!desktopSpeechPulseSeen) {
+          desktopSpeechPulseSeen = true;
+          triggerDesktopPresence('SPEAKING', 1.055);
+        }
+      }
       // AI speech is independent from the manual "Simulate Speech" toggle.
       // Raphael's real reply must remain audible even when interface/demo
       // sound effects are disabled.
@@ -5819,6 +5891,8 @@ const MINI_CHAT_PAD = 3;
       // The whole reply has finished speaking - only now may the caption
       // start its countdown.
       speechInProgress = false;
+      finishDesktopSubtitle();
+      desktopSpeechPulseSeen = false;
       if (captionMode === 'bar') scheduleBarCaptionAutoHide();
       spanishSubtitleActive = false;
     } else if (msg.type === 'error') {
