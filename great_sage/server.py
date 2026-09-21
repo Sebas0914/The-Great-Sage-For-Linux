@@ -802,13 +802,18 @@ def _handle_chat(text, engine, voice, sink, websocket, loop,
         # Subtitles are an independent Spanish rendering of the delivered
         # reply. Generate them in parallel with F5/RVC so the extra model call
         # does not have to block the start of speech.
-        subtitle_result = [""]
         subtitle_worker = None
         if guarded.strip():
+            def emit_spanish_subtitles():
+                translated = _translate_subtitles(engine.provider, guarded)
+                if translated:
+                    try:
+                        send({"type": "subtitle_text", "text": translated})
+                    except websockets.exceptions.ConnectionClosed:
+                        pass
+
             subtitle_worker = threading.Thread(
-                target=lambda: subtitle_result.__setitem__(
-                    0, _translate_subtitles(engine.provider, guarded)
-                ),
+                target=emit_spanish_subtitles,
                 daemon=True,
                 name="spanish-subtitles",
             )
@@ -850,13 +855,9 @@ def _handle_chat(text, engine, voice, sink, websocket, loop,
     except websockets.exceptions.ConnectionClosed:
         log.warning("Connection closed while sending audio for reply to %r", text)
     finally:
-        if 'subtitle_worker' in locals() and subtitle_worker is not None:
-            subtitle_worker.join(timeout=30)
-            if subtitle_result[0]:
-                try:
-                    send({"type": "subtitle_text", "text": subtitle_result[0]})
-                except websockets.exceptions.ConnectionClosed:
-                    pass
+        # The subtitle worker sends its result independently; do not wait for
+        # it here, otherwise a slow translation would delay speaking_done and
+        # keep the HUD in its speech state unnecessarily.
         timer.finish()
         try:
             send({"type": "speaking_done"})
