@@ -1,19 +1,19 @@
 """Persistent Raphael RVC worker.
 
-This file intentionally keeps all infer_rvc_python imports inside the RVC
-runtime process. Its stdout is a binary protocol; diagnostic output goes to
-stderr so the parent process can reliably exchange framed messages.
+Audio crosses the process boundary through temporary WAV files. The stdout
+protocol therefore carries only small control messages, while RVC inference
+and audio serialization stay inside this runtime process.
 """
 from __future__ import annotations
 
 import argparse
+import os
 import pickle
 import struct
 import sys
 import tempfile
 import traceback
 
-import numpy as np
 import soundfile as sf
 
 
@@ -79,43 +79,40 @@ def main() -> int:
             if request.get("op") != "convert":
                 raise ValueError(f"unknown RVC worker operation: {request.get('op')!r}")
 
-            audio = np.asarray(request["audio"], dtype=np.float32)
-            sample_rate = int(request["sample_rate"])
+            input_path = request.get("input_path")
+            if not input_path or not os.path.isfile(input_path):
+                raise FileNotFoundError(f"RVC input WAV not found: {input_path!r}")
 
-            # Use a temporary WAV for inference instead of passing an in-memory
-            # tuple. infer_rvc_python supports both forms, but its Harvest F0
-            # implementation explicitly rejects tuple/array input. Using a
-            # file path also keeps all pitch backends on the same code path.
-            temp_path = None
+            output_path = None
             try:
-                with tempfile.NamedTemporaryFile(
-                    suffix=".wav",
-                    prefix="great-sage-rvc-",
-                    delete=False,
-                ) as temp_file:
-                    temp_path = temp_file.name
-
-                sf.write(temp_path, audio, sample_rate, subtype="FLOAT")
                 result, output_rate = converter.generate_from_cache(
-                    audio_data=temp_path,
+                    audio_data=input_path,
                     tag=args.tag,
                 )
+
+                with tempfile.NamedTemporaryFile(
+                    suffix=".wav",
+                    prefix="great-sage-rvc-out-",
+                    delete=False,
+                ) as output_file:
+                    output_path = output_file.name
+
+                sf.write(output_path, result, int(output_rate), subtype="FLOAT")
+                send(
+                    sys.stdout.buffer,
+                    {
+                        "ok": True,
+                        "output_path": output_path,
+                        "sample_rate": int(output_rate),
+                    },
+                )
+                output_path = None
             finally:
-                if temp_path:
+                if output_path:
                     try:
-                        import os
-                        os.unlink(temp_path)
+                        os.unlink(output_path)
                     except OSError:
                         pass
-
-            send(
-                sys.stdout.buffer,
-                {
-                    "ok": True,
-                    "audio": np.asarray(result, dtype=np.float32).reshape(-1),
-                    "sample_rate": int(output_rate),
-                },
-            )
         except Exception as exc:
             traceback.print_exc(file=sys.stderr)
             send(sys.stdout.buffer, {"ok": False, "error": f"{type(exc).__name__}: {exc}"})
