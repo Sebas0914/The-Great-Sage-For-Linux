@@ -101,8 +101,10 @@ online access. `LOCAL_ONLY` always disables them.
 
 ## Voice
 
-Speech recognition uses local faster-whisper. F5-TTS is the preferred local
-voice engine when configured.
+Speech recognition uses local faster-whisper. F5-TTS is the base local TTS engine.
+When configured, its audio is passed through the Raphael RVC v2 stage using RMVPE.
+The Raphael model and index are third-party assets and are intentionally not
+bundled or downloaded automatically.
 
 If voice is disabled or its dependencies are unavailable, the model layer
 can still be used for text interaction.
@@ -160,3 +162,38 @@ and the Linux/KWin platform contract.
 
 A real KDE Wayland session is still required for end-to-end validation of
 shortcuts, active-window D-Bus communication, and desktop capture.
+
+
+### Raphael RVC voice
+
+The repository contains the integration code, but not the third-party Raphael
+voice weights. The model card specifies the RVC v2 model and index, RMVPE,
+index rate 0.8, and consonant protection 0.33. citeturn0search0
+
+Place the two model files at:
+
+```
+voice_models/raphael/Raphael_200e_3400s.pth
+voice_models/raphael/Raphael.index
+```
+
+or override the paths with:
+
+```bash
+export GREAT_SAGE_RVC_MODEL=/absolute/path/to/Raphael_200e_3400s.pth
+export GREAT_SAGE_RVC_INDEX=/absolute/path/to/Raphael.index
+```
+
+Then install the Python integration dependency:
+
+```bash
+pip install -r requirements.txt
+```
+
+The RVC wrapper used by Great Sage supports array input/output and preloaded
+models; its current PyPI release requires Python 3.10+ but publishes classifiers
+through Python 3.13, so Python 3.14 should be treated as a runtime compatibility
+test rather than a guarantee. citeturn1view0
+
+If the model files are missing or the RVC dependency cannot initialize, Great
+Sage keeps F5-TTS active instead of failing startup.
