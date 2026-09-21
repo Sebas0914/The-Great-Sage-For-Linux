@@ -8118,8 +8118,10 @@ const MINI_CHAT_PAD = 3;
   // ---- Window controls (there is no native title bar) ----
   document.getElementById('win-min').addEventListener('click',
     () => callHost('minimize'));
-  document.getElementById('win-close').addEventListener('click',
-    () => callHost(DESKTOP_RAPHAEL_MODE ? 'hide_app' : 'close_app'));
+  document.getElementById('win-close').addEventListener('click', () => {
+    if (DESKTOP_RAPHAEL_MODE) document.title = 'GS_HIDE_OVERLAY';
+    else callHost('close_app');
+  });
   document.getElementById('win-max').addEventListener('click', async () => {
     // Python owns the maximised flag: pywebview has maximize() and
     // restore() but no way to ask which state the window is in, so the
