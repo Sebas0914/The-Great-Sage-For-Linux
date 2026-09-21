@@ -742,6 +742,19 @@ F5_SPEED = 0.92
 F5_CHUNK_THRESHOLD_CHARS = 260
 F5_CHUNK_TARGET_CHARS = 220
 
+# --- Raphael RVC v2 post-processing ------------------------------------
+# Third-party model weights are intentionally not bundled or downloaded.
+RVC_ENABLED = os.environ.get("GREAT_SAGE_RVC_ENABLED", "true").lower() in {"1", "true", "yes", "on"}
+RVC_MODEL_PATH = os.environ.get("GREAT_SAGE_RVC_MODEL", os.path.join("voice_models", "raphael", "Raphael_200e_3400s.pth"))
+RVC_INDEX_PATH = os.environ.get("GREAT_SAGE_RVC_INDEX", os.path.join("voice_models", "raphael", "Raphael.index"))
+RVC_PITCH_METHOD = os.environ.get("GREAT_SAGE_RVC_PITCH", "rmvpe+")
+RVC_INDEX_RATE = float(os.environ.get("GREAT_SAGE_RVC_INDEX_RATE", "0.8"))
+RVC_PROTECT = float(os.environ.get("GREAT_SAGE_RVC_PROTECT", "0.33"))
+RVC_PITCH_SEMITONES = int(os.environ.get("GREAT_SAGE_RVC_PITCH_SEMITONES", "0"))
+RVC_DEVICE = os.environ.get("GREAT_SAGE_RVC_DEVICE", "cuda")
+RVC_TAG = os.environ.get("GREAT_SAGE_RVC_TAG", "raphael")
+
+
 # "cuda", "cpu", or None to auto-detect (uses your GPU if torch sees one).
 CLONE_DEVICE = None
 
