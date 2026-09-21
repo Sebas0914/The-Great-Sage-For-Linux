@@ -32,6 +32,19 @@ def main() -> int:
         print(f"Creating {VENV} with system-site-packages...")
         venv.EnvBuilder(with_pip=True, system_site_packages=True).create(VENV)
 
+    # A virtualenv does not expose another virtualenv's site-packages through
+    # system-site-packages. Great Sage already owns the CUDA PyTorch stack in
+    # .venv, so expose that exact site-packages directory to the RVC runtime
+    # with a .pth file instead of downloading a second multi-GB torch build.
+    main_site = ROOT / ".venv" / "lib" / f"python{sys.version_info.major}.{sys.version_info.minor}" / "site-packages"
+    if not main_site.is_dir():
+        raise SystemExit(f"Main Great Sage site-packages not found: {main_site}. Activate/create .venv first.")
+    rvc_site = VENV / "lib" / f"python{sys.version_info.major}.{sys.version_info.minor}" / "site-packages"
+    rvc_site.mkdir(parents=True, exist_ok=True)
+    bridge = rvc_site / "great_sage_main_venv.pth"
+    bridge.write_text(str(main_site) + "\n", encoding="utf-8")
+    print(f"Reusing main PyTorch stack from {main_site}")
+
     run(str(PYTHON), "-m", "pip", "install", "--upgrade", "pip")
     # infer_rvc_python 1.3.1 declares faiss-cpu==1.10.0. That FAISS release
     # has Linux wheels through CPython 3.13, but not CPython 3.14. The
