@@ -584,7 +584,8 @@ def _deep_review(provider, question, draft):
 
 
 def _handle_chat(text, engine, voice, sink, websocket, loop,
-                 think=False, conversational_follow_up=False) -> None:
+                 think=False, conversational_follow_up=False,
+                 follow_up_listener=None) -> None:
     """Runs in its own thread so the async server loop stays free to
     receive the "audio_ended" acks that unblock voice.speak() below.
 
@@ -869,7 +870,7 @@ def _handle_chat(text, engine, voice, sink, websocket, loop,
         # HUD keep the Spanish subtitle as the authoritative caption.
         if subtitle_worker is not None:
             subtitle_worker.join()
-        if conversational_follow_up and voice is not None:
+        if conversational_follow_up and voice is not None and follow_up_listener is not None:
             try:
                 follow_up_listener.start()
                 log.info("Conversational follow-up listening armed for %.1fs",
@@ -911,7 +912,8 @@ def _translate_subtitles(provider, text: str) -> str:
 
 
 def _start_chat_thread(text, engine, voice, sink, websocket, loop,
-                       think=False, conversational_follow_up=False) -> None:
+                       think=False, conversational_follow_up=False,
+                       follow_up_listener=None) -> None:
     """Shared by the "chat" message handler and both voice-input paths
     (push-to-talk, wake-word) below - same background-thread dispatch
     either way, so a voice-originated message goes through the exact same
@@ -925,7 +927,8 @@ def _start_chat_thread(text, engine, voice, sink, websocket, loop,
     threading.Thread(
         target=_log_exceptions(_handle_chat, "chat reply"),
         args=(text, engine, voice, sink, websocket, loop),
-        kwargs={"think": think, "conversational_follow_up": conversational_follow_up},
+        kwargs={"think": think, "conversational_follow_up": conversational_follow_up,
+                "follow_up_listener": follow_up_listener},
         daemon=True,
     ).start()
 
@@ -1028,7 +1031,8 @@ async def run_server(engine, voice) -> None:
         if voice is not None:
             voice.set_sink(sink)
         _start_chat_thread(text, engine, voice, sink, ws, loop,
-                       conversational_follow_up=True)
+                       conversational_follow_up=True,
+                       follow_up_listener=follow_up_listener)
 
     def _send_ptt_state(listening: bool) -> None:
         """Tell the page whether the mic is open.
