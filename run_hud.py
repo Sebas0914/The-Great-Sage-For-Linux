@@ -732,7 +732,7 @@ def main() -> int:
         window_url = html_path + "?desktop=1"
     if os.name != "nt":
         window_kwargs["hidden"] = True
-    window = webview.create_window("Great Sage", html_path, **window_kwargs)
+    # On Linux the visible Qt overlay must receive ?desktop=1. The hidden\n    # pywebview host must not load a second HUD client, otherwise both\n    # windows compete for the WebSocket/audio sink.\n    host_url = window_url if os.name == "nt" else "data:text/html,<html><body></body></html>"\n    window = webview.create_window("Great Sage", host_url, **window_kwargs)
     api.attach(window)
 
     # Centre the window once the page is up.
