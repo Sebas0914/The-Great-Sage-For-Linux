@@ -427,10 +427,6 @@ class PortalHotkey(Hotkey):
                 f"Could not register Great Sage with the XDG portal: {exc}"
             ) from exc
 
-        intro = await bus.introspect(
-            "org.freedesktop.portal.Desktop",
-            "/org/freedesktop/portal/desktop",
-        )
         self._bus = bus
         intro = await bus.introspect(
             "org.freedesktop.portal.Desktop",
