@@ -447,7 +447,10 @@ class _HudHostApi:
         # Only the overlay moves. The app keeps running on 3.14 with torch,
         # F5-TTS and the whole voice stack untouched - which is possible
         # only because the overlay is already a separate process.
-        venv_python = os.path.join(here, ".overlay-venv", "Scripts", "python.exe")
+        if os.name == "nt":
+            venv_python = os.path.join(here, ".overlay-venv", "Scripts", "python.exe")
+        else:
+            venv_python = os.path.join(here, ".overlay-venv", "bin", "python")
         interpreter = venv_python if os.path.exists(venv_python) else sys.executable
         if interpreter != sys.executable:
             log.info("Overlay will run under %s", venv_python)
@@ -523,10 +526,6 @@ class _HudHostApi:
         stack that already works: if the overlay host fails, the app it
         was launched from is untouched.
         """
-        if os.name != "nt":
-            log.info("Overlay host is not enabled on Linux; keeping native HUD window")
-            return False
-
         import subprocess
         win = self._window
         if win is None:
@@ -705,19 +704,34 @@ def main() -> int:
     # APIs, so start with a normal native window there. The HUD remains
     # fully usable; advanced click-through overlay controls stay Windows-
     # specific until a native Linux overlay host is implemented.
-    window_kwargs = {
-        "width": 1920,
-        "height": 1080,
-        "background_color": "#030b08",
-        "js_api": api,
-        "resizable": True,
-    }
     if os.name == "nt":
-        window_kwargs.update({
+        window_kwargs = {
+            "width": 1920,
+            "height": 1080,
+            "background_color": "#030b08",
+            "js_api": api,
+            "resizable": True,
             "transparent": True,
             "frameless": True,
             "easy_drag": False,
-        })
+        }
+        window_url = html_path
+    else:
+        window_kwargs = {
+            "width": 1920,
+            "height": 1080,
+            "background_color": "#000000",
+            "js_api": api,
+            "resizable": False,
+            "transparent": True,
+            "frameless": True,
+            "focus": False,
+            "on_top": True,
+            "fullscreen": True,
+        }
+        window_url = html_path + "?desktop=1"
+    if os.name != "nt":
+        window_kwargs["hidden"] = True
     window = webview.create_window("Great Sage", html_path, **window_kwargs)
     api.attach(window)
 
@@ -746,6 +760,21 @@ def main() -> int:
         window.events.loaded += _centre_window
     except Exception:
         log.exception("Could not hook the loaded event to centre the window")
+
+    if os.name != "nt":
+        def _keep_backend_when_closed(*_args):
+            try:
+                window.hide()
+            except Exception:
+                pass
+            return False
+        try:
+            window.events.closing += _keep_backend_when_closed
+        except Exception:
+            log.exception("Could not protect Linux HUD close event")
+        # The real visible surface is the separate Qt overlay. The pywebview
+        # window stays hidden as a compatibility/control host.
+        api.set_overlay(True)
     # Devtools OFF by default. debug=True enables WebView2's inspector,
     # which is why F12 or a stray right-click opened a developer window
     # mid-use - fine while building, wrong for anyone testing the app.
