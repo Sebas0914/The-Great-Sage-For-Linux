@@ -501,7 +501,12 @@ class PortalHotkey(Hotkey):
             target=self._run, daemon=True, name="great-sage-shortcuts"
         )
         self._thread.start()
-        self._ready_event.wait(timeout=2.0)
+        if not self._ready_event.wait(timeout=10.0):
+            self._error = TimeoutError(
+                "XDG GlobalShortcuts portal did not finish registering "
+                "within 10 seconds; it may be waiting for a desktop shortcut dialog."
+            )
+            return False
         return self.active and self._error is None
 
     def stop(self) -> None:
