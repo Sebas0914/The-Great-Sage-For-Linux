@@ -26,6 +26,25 @@ def send(stream, payload):
     stream.flush()
 
 
+def _clarity_eq(samples, sample_rate: int):
+    """Gentle post-RVC voicing EQ: less box/horn, slightly more articulation."""
+    from pedalboard import HighShelfFilter, LowShelfFilter, PeakFilter, Pedalboard
+
+    board = Pedalboard([
+        LowShelfFilter(cutoff_frequency_hz=180.0, gain_db=-1.2, q=0.7),
+        PeakFilter(cutoff_frequency_hz=700.0, gain_db=-1.4, q=0.8),
+        PeakFilter(cutoff_frequency_hz=1900.0, gain_db=-1.5, q=0.9),
+        PeakFilter(cutoff_frequency_hz=4300.0, gain_db=1.6, q=0.85),
+        HighShelfFilter(cutoff_frequency_hz=8500.0, gain_db=0.8, q=0.7),
+    ])
+    data = np.asarray(samples, dtype=np.float32)
+    mono = data.ndim == 1
+    if mono:
+        data = data.reshape(1, -1)
+    out = board(data, float(sample_rate), reset=True)
+    return out[0] if mono else out
+
+
 def recv(stream):
     header = stream.read(8)
     if len(header) != 8:
@@ -47,6 +66,7 @@ def main() -> int:
     parser.add_argument("--pitch-semitones", type=int, default=0)
     parser.add_argument("--output-gain-db", type=float, default=0.0)
     parser.add_argument("--dry-mix", type=float, default=0.0)
+    parser.add_argument("--clarity-eq", default="true")
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--tag", default="raphael")
     args = parser.parse_args()
@@ -106,6 +126,9 @@ def main() -> int:
 
                 if args.output_gain_db:
                     result *= 10.0 ** (args.output_gain_db / 20.0)
+
+                if str(args.clarity_eq).lower() in {"1", "true", "yes", "on"}:
+                    result = _clarity_eq(result, int(output_rate))
 
                 dry_mix = max(0.0, min(1.0, float(args.dry_mix)))
                 if dry_mix > 0.0:
