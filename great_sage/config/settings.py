@@ -659,10 +659,19 @@ VOICE_ID = None
 CLONE_REFERENCE_AUDIO_PATH = os.path.join("voice_samples", "my_voice_clean.wav")
 
 # --- F5-TTS (VOICE_ENGINE = "f5") --------------------------------------
-# Reference clip to clone. A "<name>.txt" sidecar holding that clip's
-# transcript is optional but preferred - without one, F5 transcribes the
-# clip itself at startup, which is slower and less accurate.
-F5_REFERENCE_AUDIO_PATH = os.path.join("voice_samples", "candidates", "voice_a.wav")
+# Raphael's RVC model is optimized for Japanese source speech. Its model
+# card specifically demonstrates Japanese NanamiNeural input and warns that
+# cross-language conversion can vary in pronunciation quality. The old
+# default here was an English reference ("voice_a"), which forced F5-TTS to
+# cross languages before RVC saw the result. Use an existing clean Japanese
+# reference from the project's voice-line set instead.
+#
+# A GREAT_SAGE_F5_REFERENCE override is still available for users who want
+# to provide their own clean 5-15s reference recording.
+F5_REFERENCE_AUDIO_PATH = os.environ.get(
+    "GREAT_SAGE_F5_REFERENCE",
+    os.path.join("voice_lines", "shinka_jouken.ogg"),
+)
 
 # Flow-matching steps: the speed/quality dial, with no equivalent in an
 # autoregressive engine. Measured on one 9.5s line: 8 -> 2.16s (4.4x
