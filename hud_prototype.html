@@ -5023,6 +5023,7 @@ const MINI_CHAT_PAD = 3;
     if (!el || !box) return;
     box.classList.add('show');
     el.textContent = text;
+    if (DESKTOP_RAPHAEL_MODE) setDesktopTarget(desktopTarget.x, desktopTarget.y);
     const maxHeight = parseFloat(getComputedStyle(el).lineHeight) * 3;
     el.style.maxHeight = maxHeight + 'px';
     // Keep a rolling three-line window. Once a fourth line would appear,
