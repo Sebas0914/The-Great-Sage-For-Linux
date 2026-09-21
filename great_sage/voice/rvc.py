@@ -54,7 +54,7 @@ class RVCVoiceConverter:
         *,
         model_path: str,
         index_path: str,
-        pitch_method="rmvpe+",
+        pitch_method="rmvpe",
         index_rate=0.8,
         protect=0.33,
         pitch_semitones=0,
