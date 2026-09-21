@@ -308,6 +308,7 @@ class F5TTSVoiceOutput(VoiceOutput):
                     protect=settings.RVC_PROTECT,
                     pitch_semitones=settings.RVC_PITCH_SEMITONES,
                     output_gain_db=settings.RVC_OUTPUT_GAIN_DB,
+                    dry_mix=settings.RVC_DRY_MIX,
                     device=settings.RVC_DEVICE,
                     tag=settings.RVC_TAG,
                 )
