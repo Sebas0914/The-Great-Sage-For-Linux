@@ -42,7 +42,7 @@
     font-size: 18px;
     line-height: 1.35;
     text-align: center;
-    background: rgba(82, 87, 92, 0.72);
+    background: rgba(42, 45, 48, 0.92);
     box-shadow: 0 8px 28px rgba(0,0,0,0.35);
     border-radius: 2px;
     overflow: hidden;
@@ -79,8 +79,8 @@
     max-height: calc(5 * 1.3em + 16px);
     overflow: hidden;
     white-space: pre-wrap;
-    overflow-wrap: normal;
-    word-break: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
   }
   /* Appears at full opacity immediately - the box itself no longer
      fades or unblurs in. The 700ms materialize used to run at the same
@@ -4555,34 +4555,42 @@ Hey Ciel</textarea>
     // interactivos por separado, sin volver interactivo el espacio
     // transparente que queda entre ambos.
 
-    const cx = window.innerWidth * 0.50;
-    const cy = window.innerHeight * 0.50;
+    const core = coreScreenPosition();
+    if (!core || !Number.isFinite(core.x) || !Number.isFinite(core.y)) {
+      return null;
+    }
 
+    // The interactive area follows Raphael's actual rendered position.
+    // It is deliberately larger than the visible core so it is easy to
+    // grab, but it never makes the transparent desktop interactive.
     const radius = Math.max(
       72,
-      Math.min(window.innerWidth, window.innerHeight) * 0.24
+      Math.min(window.innerWidth, window.innerHeight) * 0.12
     );
 
-    const core = {
-      x: cx - radius,
-      y: cy - radius,
-      width: radius * 2,
-      height: radius * 2
-    };
-
-    const rects = [core];
+    const rects = [{
+      x: Math.max(0, core.x - radius),
+      y: Math.max(0, core.y - radius),
+      width: Math.min(radius * 2, window.innerWidth),
+      height: Math.min(radius * 2, window.innerHeight)
+    }];
 
     const box = document.getElementById('caption-box');
 
     if (box && box.classList.contains('show')) {
       const r = box.getBoundingClientRect();
 
-      if (r.width > 0 && r.height > 0) {
+      if (
+        r.width > 0 &&
+        r.height > 0 &&
+        Number.isFinite(r.left) &&
+        Number.isFinite(r.top)
+      ) {
         rects.push({
-          x: r.left,
-          y: r.top,
-          width: r.width,
-          height: r.height
+          x: Math.max(0, r.left),
+          y: Math.max(0, r.top),
+          width: Math.min(r.width, window.innerWidth),
+          height: Math.min(r.height, window.innerHeight)
         });
       }
     }
@@ -4596,8 +4604,20 @@ Hey Ciel</textarea>
   window.__desktopSetDragPosition = (xPx, yPx, dxPx, dyPx, speedPx) => {
     if (!DESKTOP_RAPHAEL_MODE) return;
 
-    // La posición ya no se calcula aquí: LayerShell mueve la superficie.
-    // Aquí solo analizamos cómo está moviendo el usuario el ratón.
+    // The LayerShell surface remains fullscreen. Move Raphael inside
+    // the Three.js scene using the cursor position supplied by the host.
+    if (Number.isFinite(xPx) && Number.isFinite(yPx)) {
+      desktopDragOverride = true;
+      desktopTarget.x = Math.max(
+        0.08,
+        Math.min(0.94, Number(xPx) / Math.max(1, window.innerWidth))
+      );
+      desktopTarget.y = Math.max(
+        0.10,
+        Math.min(0.88, Number(yPx) / Math.max(1, window.innerHeight))
+      );
+    }
+
     const speed = Math.max(0, Number(speedPx) || 0);
     const dx = Number(dxPx) || 0;
     const dy = Number(dyPx) || 0;
