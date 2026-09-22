@@ -5394,17 +5394,19 @@ const MINI_CHAT_PAD = 3;
       return;
     }
 
-    captionBox.style.left =
-      Math.min(
-        Math.max(0, captionPos.xPct * window.innerWidth),
-        maxLeft
-      ) + 'px';
+    // Restore from relative coordinates, then clamp both axes so the
+    // complete caption rectangle remains inside the current viewport.
+    const nextLeft = Math.min(
+      Math.max(0, captionPos.xPct * window.innerWidth),
+      maxLeft
+    );
+    const nextTop = Math.min(
+      Math.max(0, captionPos.yPct * window.innerHeight),
+      maxTop
+    );
 
-    captionBox.style.top =
-      Math.min(
-        Math.max(0, captionPos.yPct * window.innerHeight),
-        maxTop
-      ) + 'px';
+    captionBox.style.left = nextLeft + 'px';
+    captionBox.style.top = nextTop + 'px';
 
     captionBox.style.bottom = 'auto';
     captionBox.style.transform = 'none';
