@@ -224,7 +224,10 @@ def build_provider(data, fallback):
         keys = data.get("keys") or {}
 
         if want == "nvidia":
-            key = str(keys.get("nvidia", "")).strip()
+            key = str(
+                keys.get("nvidia", "")
+                or os.environ.get("GREAT_SAGE_NVIDIA_API_KEY", "")
+            ).strip()
             if not key:
                 return fallback, "Ollama / Local (NVIDIA key missing)"
             from great_sage.models.nvidia_provider import NvidiaProvider, NvidiaRoutingProvider
