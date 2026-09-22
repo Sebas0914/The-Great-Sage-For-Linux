@@ -46,7 +46,7 @@ import signal
 import sys
 
 from PySide6.QtCore import QEvent, QPoint, Qt, QTimer, QUrl
-from PySide6.QtGui import QColor, QCursor, QGuiApplication, QSurfaceFormat
+from PySide6.QtGui import QColor, QRegion, QCursor, QGuiApplication, QSurfaceFormat
 from PySide6.QtWidgets import QApplication
 from PySide6.QtWebEngineWidgets import QWebEngineView
 
@@ -161,6 +161,8 @@ class OverlayView(QWebEngineView):
         # Click-through state. Starts None so the first poll always
         # applies a style rather than assuming one.
         self._hit_all = False
+        # Linux/Wayland: keep only Raphael's circular visual area interactive.
+        self._mask_radius = max(1, int(size * 0.30))
         self._placed = False
         self._click_through = None
         self._ct_timer = QTimer(self)
@@ -173,7 +175,7 @@ class OverlayView(QWebEngineView):
             # The fullscreen surface is deliberately click-through so VS Code,
             # browsers and games underneath remain usable. Cursor position is
             # global, so hover is polled without consuming mouse events.
-            self.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+            # Wayland: el click-through global de Qt no permite interacción selectiva.
             self._desktop_hover_timer = QTimer(self)
             self._desktop_hover_timer.timeout.connect(self._poll_desktop_hover)
             self._desktop_hover_timer.start(60)
@@ -200,9 +202,26 @@ class OverlayView(QWebEngineView):
         r = w * CORE_HIT_FRACTION
         return (dx * dx + dy * dy) <= r * r
 
+    def _update_input_mask(self):
+        # On Linux/Wayland, keep only Raphael's central area interactive.
+        # The rest of the transparent top-level window must pass clicks through.
+        if os.name == "nt":
+            return
+        w, h = self.width(), self.height()
+        r = min(self._mask_radius, w // 2, h // 2)
+        cx, cy = w // 2, h // 2
+        self.setMask(QRegion(cx - r, cy - r, r * 2, r * 2))
+
     def _set_click_through(self, on: bool):
+        # Windows uses WS_EX_TRANSPARENT. KDE Wayland does not expose
+        # that Win32 API, so leave the window unchanged here.
+        if os.name != "nt":
+            self._click_through = on
+            return
+
         if on == self._click_through:
             return
+
         try:
             import ctypes
             hwnd = int(self.winId())
@@ -214,13 +233,12 @@ class OverlayView(QWebEngineView):
             set_l(hwnd, GWL_EXSTYLE, style)
             self._click_through = on
         except Exception:
-            # Never fatal: worst case the overlay keeps eating clicks,
-            # which is how it behaved before this existed.
             pass
 
     def _update_click_through(self):
         if not self.isVisible():
             return
+        self._update_input_mask()
         self._set_click_through(not self._interactive_at(QCursor.pos()))
 
     def _poll_desktop_hover(self):
@@ -267,13 +285,13 @@ class OverlayView(QWebEngineView):
             if not self._placed:
                 self._placed = True
                 if self._desktop:
-                    self.showFullScreen()
+                    place_top_right(self, self.width())
                 else:
                     place_top_right(self, self.width())
             self.show()
-            if not self._desktop:
+            if os.name == "nt":
                 _apply_ws_border(self)
-                self._install_mouse_filter()
+            self._install_mouse_filter()
             return
         if title.strip().startswith(OPEN_PANEL_PREFIX):
             section = title.strip()[len(OPEN_PANEL_PREFIX):].strip()
@@ -591,7 +609,6 @@ def main() -> int:
         def apply_command():
             if commands["show"]:
                 commands["show"] = False
-                view.showFullScreen() if "view" in locals() else None
                 if "view" in locals():
                     view.show()
                     view.raise_()
@@ -627,7 +644,8 @@ def main() -> int:
             os.path.join(HERE, "hud_prototype.html")).toString()
         panel.load(QUrl(f"{url}?panel={args.panel}"))
         panel.show()
-        _apply_ws_border(panel)
+        if os.name == "nt":
+            _apply_ws_border(panel)
         return app.exec()
 
     view = OverlayView(args.size)
