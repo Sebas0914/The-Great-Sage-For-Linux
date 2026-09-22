@@ -783,6 +783,14 @@ class OverlayView(QWebEngineView):
                             self._drag_press_pos - self.frameGeometry().topLeft()
                         )
                         self._dragging = False
+                        try:
+                            self.page().runJavaScript(
+                                "window.__desktopBeginDrag "
+                                "&& window.__desktopBeginDrag(%s,%s);"
+                                % (pos.x(), pos.y())
+                            )
+                        except Exception:
+                            pass
                         return False
 
             elif et == QEvent.MouseMove:
