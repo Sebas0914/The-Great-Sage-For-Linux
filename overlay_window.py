@@ -754,8 +754,8 @@ class OverlayView(QWebEngineView):
             proxy.installEventFilter(self)
             self._filtered = proxy
 
-    def _point_inside_wayland_rect(self, pos):
-        rects = self._wayland_interactive_rects
+    def _point_inside_wayland_rect(self, pos, rects=None):
+        rects = self._wayland_interactive_rects if rects is None else rects
 
         if not rects:
             return False
@@ -777,6 +777,17 @@ class OverlayView(QWebEngineView):
                     pos = event.position().toPoint()
 
                     if self._point_inside_wayland_rect(pos):
+                        # The second interactive rectangle is the caption.
+                        # Its mouse events belong to the web page so the
+                        # caption's own MOVE CAPTION gesture can run. Only
+                        # presses on Raphael are promoted to host-side drag.
+                        rects = self._wayland_interactive_rects
+                        if (
+                            len(rects) > 1
+                            and self._point_inside_wayland_rect(pos, rects[1:2])
+                        ):
+                            return super().eventFilter(obj, event)
+
                         self._drag_press_pos = event.globalPosition().toPoint()
                         self._drag_offset = None
                         self._drag_window_offset = (
