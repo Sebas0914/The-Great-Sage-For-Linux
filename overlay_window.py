@@ -228,7 +228,11 @@ class OverlayView(QWebEngineView):
         if WAYLAND_SESSION:
             flags |= Qt.WindowDoesNotAcceptFocus
         self.setWindowFlags(flags)
-        self.page().setBackgroundColor(QColor(Qt.transparent))
+        self.page().setBackgroundColor(QColor(0, 0, 0, 0))
+        self.setStyleSheet("background: transparent; border: 0;")
+        self.viewport().setAttribute(Qt.WA_TranslucentBackground, True)
+        self.viewport().setAttribute(Qt.WA_NoSystemBackground, True)
+        self.viewport().setStyleSheet("background: transparent; border: 0;")
         # Qt must not paint its own background before Chromium draws. On a
         # translucent window that pre-paint is a candidate for the visible
         # flicker, since it briefly shows a frame the web content has not
@@ -455,20 +459,20 @@ class OverlayView(QWebEngineView):
                                 continue
 
                             x = float(rect.get("x", 0))
-                        y = float(rect.get("y", 0))
-                        rw = float(rect.get("width", 1))
-                        rh = float(rect.get("height", 1))
+                            y = float(rect.get("y", 0))
+                            rw = float(rect.get("width", 1))
+                            rh = float(rect.get("height", 1))
 
-                        # Clamp every rectangle to the actual Qt surface.
-                        # A stale/partially off-screen DOM rect must never
-                        # create an input region outside the LayerShell
-                        # surface, and zero-sized rectangles are discarded.
-                        x1 = max(0.0, min(float(w), x))
-                        y1 = max(0.0, min(float(h), y))
-                        x2 = max(x1, min(float(w), x + rw))
-                        y2 = max(y1, min(float(h), y + rh))
-                        if x2 > x1 and y2 > y1:
-                            clean_rects.append((x1, y1, x2 - x1, y2 - y1))
+                            # Clamp every rectangle to the actual Qt surface.
+                            # A stale/partially off-screen DOM rect must never
+                            # create an input region outside the LayerShell
+                            # surface, and zero-sized rectangles are discarded.
+                            x1 = max(0.0, min(float(w), x))
+                            y1 = max(0.0, min(float(h), y))
+                            x2 = max(x1, min(float(w), x + rw))
+                            y2 = max(y1, min(float(h), y + rh))
+                            if x2 > x1 and y2 > y1:
+                                clean_rects.append((x1, y1, x2 - x1, y2 - y1))
 
                         self._apply_wayland_input_regions(clean_rects)
 
