@@ -230,9 +230,6 @@ class OverlayView(QWebEngineView):
         self.setWindowFlags(flags)
         self.page().setBackgroundColor(QColor(0, 0, 0, 0))
         self.setStyleSheet("background: transparent; border: 0;")
-        self.viewport().setAttribute(Qt.WA_TranslucentBackground, True)
-        self.viewport().setAttribute(Qt.WA_NoSystemBackground, True)
-        self.viewport().setStyleSheet("background: transparent; border: 0;")
         # Qt must not paint its own background before Chromium draws. On a
         # translucent window that pre-paint is a candidate for the visible
         # flicker, since it briefly shows a frame the web content has not
