@@ -382,9 +382,6 @@ class OverlayView(QWebEngineView):
 
         self._wayland_interactive_rects = clean_rects
 
-        if not clean_rects:
-            return
-
         try:
             values = []
 
@@ -430,6 +427,13 @@ class OverlayView(QWebEngineView):
             # En modo desktop, preguntar al HTML por la posición real
             # de Raphael. Así la región de Wayland sigue al icono.
             if self._desktop:
+                # Durante el arrastre necesitamos que el cursor pueda
+                # seguir entrando en la superficie completa. El HTML
+                # continúa moviendo únicamente Raphael.
+                if self._dragging:
+                    self._apply_wayland_input_region(0, 0, w, h)
+                    return
+
                 # Raphael y el cuadro de subtítulos son zonas
                 # independientes dentro de la superficie Wayland.
                 def got_rects(rects):
@@ -596,9 +600,8 @@ class OverlayView(QWebEngineView):
         self._wayland_layer = ok
 
         if ok:
-            # Posición inicial: esquina superior derecha.
-            self._place_wayland_top_right()
-
+            # The LayerShell surface is fullscreen and fixed. Raphael's
+            # position is controlled by the HTML scene, not by LayerShell.
             print(
                 "[overlay] Wayland LayerShellQt overlay enabled",
                 flush=True,
@@ -788,6 +791,13 @@ class OverlayView(QWebEngineView):
                     if not self._dragging and (dx * dx + dy * dy) >= 36:
                         self._dragging = True
 
+                        # Temporarily make the whole fullscreen surface
+                        # interactive so the pointer cannot leave the
+                        # original Raphael region while dragging.
+                        self._apply_wayland_input_region(
+                            0, 0, self.width(), self.height()
+                        )
+
                         try:
                             self.page().runJavaScript(
                                 "window.__desktopSetHostDragging "
@@ -799,27 +809,25 @@ class OverlayView(QWebEngineView):
                     if self._dragging:
                         speed = (dx * dx + dy * dy) ** 0.5
 
-                        # Move the REAL Wayland LayerShell surface.
-                        # Raphael remains centered inside that surface;
-                        # the desktop position belongs to the host window.
-                        offset = self._drag_window_offset or QPoint(0, 0)
-                        new_top_left = current - offset
-
-                        if not self._position_wayland_surface(new_top_left):
-                            print(
-                                "[overlay] Could not move the Wayland surface",
-                                flush=True,
-                            )
-
-                        # JavaScript only receives movement data for mood
-                        # detection (HAPPY / CONFUSED / ANNOYED).
+                        # The Wayland surface stays fullscreen and fixed.
+                        # Convert the global cursor position to coordinates
+                        # inside that surface and let Three.js move Raphael.
                         try:
+                            screen = self.screen() or QGuiApplication.primaryScreen()
+                            area = screen.geometry() if screen is not None else None
+                            if area is not None:
+                                local_x = current.x() - area.left()
+                                local_y = current.y() - area.top()
+                            else:
+                                local_x = current.x()
+                                local_y = current.y()
+
                             self.page().runJavaScript(
                                 "window.__desktopSetDragPosition "
                                 "&& window.__desktopSetDragPosition(%s,%s,%s,%s,%s);"
                                 % (
-                                    current.x(),
-                                    current.y(),
+                                    local_x,
+                                    local_y,
                                     dx,
                                     dy,
                                     speed,
