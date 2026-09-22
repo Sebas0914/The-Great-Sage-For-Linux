@@ -5,6 +5,7 @@
 <title>Great Sage HUD Prototype</title>
 <style>
   html, body { margin: 0; padding: 0; background: #030b08; overflow: hidden; height: 100%; }
+  html.desktop-raphael, body.desktop-raphael { background: transparent !important; }
   #canvas-wrap {
     position: fixed; inset: 0;
     transition: filter 380ms ease, transform 380ms ease;
@@ -5212,12 +5213,9 @@ const MINI_CHAT_PAD = 3;
     box.classList.add('show');
     el.textContent = text;
     if (DESKTOP_RAPHAEL_MODE) setDesktopTarget(desktopTarget.x, desktopTarget.y);
-    // No recortar palabras desde el principio: eso partía las frases
-    // españolas y hacía desaparecer media traducción.
-    const lineHeight = parseFloat(getComputedStyle(el).lineHeight) || 20;
-    const maxHeight = lineHeight * 4;
-    el.style.maxHeight = maxHeight + 'px';
-    el.style.overflowY = 'hidden';
+    // Desktop CSS owns the box dimensions. Do not replace its max-height
+    // or overflow policy here: long Spanish subtitles must wrap and remain
+    // readable instead of being clipped to four lines.
   }
 
   function showCaption(text) {
