@@ -20,7 +20,9 @@ class NvidiaProvider(ModelProvider):
     def __init__(self, api_key: str = "", model: str = "",
                  base_url: str = "https://integrate.api.nvidia.com/v1",
                  timeout: int = 120, temperature: float = 0.2,
-                 max_tokens: int = 2048, reasoning_effort: str = ""):
+                 max_tokens: int = 2048, reasoning_effort: str = "",
+                 reasoning_budget: int | None = None,
+                 enable_thinking: bool | None = None):
         self.api_key = (api_key or "").strip()
         self.model = model.strip()
         self.base_url = base_url.rstrip("/")
@@ -28,6 +30,8 @@ class NvidiaProvider(ModelProvider):
         self.temperature = temperature
         self.max_tokens = max_tokens
         self.reasoning_effort = (reasoning_effort or "").strip()
+        self.reasoning_budget = reasoning_budget
+        self.enable_thinking = enable_thinking
 
     @property
     def is_remote(self) -> bool:
@@ -55,6 +59,12 @@ class NvidiaProvider(ModelProvider):
             body["response_format"] = response_format
         if self.reasoning_effort:
             body["reasoning_effort"] = self.reasoning_effort
+        if self.reasoning_budget is not None:
+            body["reasoning_budget"] = self.reasoning_budget
+        if self.enable_thinking is not None:
+            body["chat_template_kwargs"] = {
+                "enable_thinking": self.enable_thinking
+            }
         return body
 
     def _post(self, messages, stream=False, tools=None, response_format=None):
