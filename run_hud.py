@@ -547,12 +547,19 @@ class _HudHostApi:
                                      daemon=True).start()
                     log.info("Overlay process started (pid %s)",
                              self._overlay_proc.pid)
-                win.hide()
+                # On Linux the compatibility pywebview host is created
+                # with hidden=True, and set_overlay(True) runs before
+                # webview.start(). Calling hide() here asks pywebview to
+                # manipulate a window that has not started yet, raising
+                # "Main window failed to start". The host is already hidden.
+                if os.name == "nt":
+                    win.hide()
             else:
                 if self._overlay_proc is not None:
                     self._overlay_proc.terminate()
                     self._overlay_proc = None
-                win.show()
+                if os.name == "nt":
+                    win.show()
             return True
         except Exception:
             log.exception("set_overlay(%s) failed", on)
@@ -735,8 +742,24 @@ def main() -> int:
     # On Linux the visible Qt overlay must receive ?desktop=1. The hidden
     # pywebview host must not load a second HUD client, otherwise both
     # windows compete for the WebSocket/audio sink.
-    host_url = window_url if os.name == "nt" else "data:text/html,<html><body></body></html>"
-    window = webview.create_window("Great Sage", host_url, **window_kwargs)
+    #
+    # IMPORTANT: do NOT use a data: URL here. pywebview classifies any
+    # non-http/file URL as a local URL and automatically starts its Bottle
+    # HTTP server. That created random 127.0.0.1 ports (for example 55847)
+    # for this hidden compatibility window. We only need an empty host,
+    # so use the html= argument instead.
+    if os.name != "nt":
+        window = webview.create_window(
+            "Great Sage",
+            html="<!doctype html><html><body></body></html>",
+            **window_kwargs,
+        )
+    else:
+        window = webview.create_window(
+            "Great Sage",
+            window_url,
+            **window_kwargs,
+        )
     api.attach(window)
 
     # Centre the window once the page is up.
