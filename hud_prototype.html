@@ -67,8 +67,13 @@
     font-size: 14px;
     line-height: 1.3;
 
-    max-height: calc(5 * 1.3em + 16px);
+    max-height: 30vh;
     box-sizing: border-box;
+    cursor: grab;
+  }
+
+  body.desktop-raphael #caption-box.dragging {
+    cursor: grabbing;
   }
 
   body.desktop-raphael #caption-box .caption-close-btn {
@@ -76,11 +81,12 @@
   }
 
   body.desktop-raphael #caption-text {
-    max-height: calc(5 * 1.3em + 16px);
-    overflow: hidden;
+    max-height: 30vh;
+    overflow-y: auto;
+    overflow-x: hidden;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
-    word-break: break-word;
+    word-break: normal;
   }
   /* Appears at full opacity immediately - the box itself no longer
      fades or unblurs in. The 700ms materialize used to run at the same
