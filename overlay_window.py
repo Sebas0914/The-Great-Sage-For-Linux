@@ -41,6 +41,7 @@ surface format.
 """
 
 import argparse
+import ctypes
 import os
 import signal
 import sys
@@ -127,6 +128,87 @@ CORE_HIT_FRACTION = 0.26
 HIT_ALL_SENTINEL = "GS_HIT_ALL"
 HIT_CORE_SENTINEL = "GS_HIT_CORE"
 
+WAYLAND_SESSION = (
+    sys.platform.startswith("linux")
+    and os.environ.get("XDG_SESSION_TYPE", "").lower() == "wayland"
+)
+
+_WL_LAYER = None
+_WL_INPUT = None
+
+
+def _load_wayland_native():
+    global _WL_LAYER, _WL_INPUT
+
+    if not WAYLAND_SESSION:
+        return None, None
+
+    if _WL_LAYER is not None or _WL_INPUT is not None:
+        return _WL_LAYER, _WL_INPUT
+
+    native_dir = os.path.join(HERE, "native")
+    layer_path = os.path.join(native_dir, "libgs_layer_config.so")
+    input_path = os.path.join(native_dir, "libgs_input_region.so")
+
+    try:
+        if os.path.isfile(layer_path):
+            _WL_LAYER = ctypes.CDLL(layer_path)
+            _WL_LAYER.gs_configure_layer.argtypes = [
+                ctypes.c_void_p,
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.c_int,
+            ]
+            _WL_LAYER.gs_configure_layer.restype = ctypes.c_int
+            _WL_LAYER.gs_position_layer.argtypes = [
+                ctypes.c_void_p, ctypes.c_int, ctypes.c_int
+            ]
+            _WL_LAYER.gs_position_layer.restype = ctypes.c_int
+
+        if os.path.isfile(input_path):
+            _WL_INPUT = ctypes.CDLL(input_path)
+            _WL_INPUT.gs_set_input_region.argtypes = [
+                ctypes.c_void_p,
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.c_int,
+            ]
+            _WL_INPUT.gs_set_input_region.restype = ctypes.c_int
+
+            _WL_INPUT.gs_set_input_regions.argtypes = [
+                ctypes.c_void_p,
+                ctypes.POINTER(ctypes.c_int),
+                ctypes.c_int,
+            ]
+            _WL_INPUT.gs_set_input_regions.restype = ctypes.c_int
+
+    except Exception as exc:
+        print(f"[overlay] Wayland native load failed: {exc}", flush=True)
+        _WL_LAYER = None
+        _WL_INPUT = None
+
+    return _WL_LAYER, _WL_INPUT
+
+
+def _qwindow_cpp_pointer(widget):
+    qwindow = widget.windowHandle()
+    if qwindow is None:
+        widget.createWinId()
+        qwindow = widget.windowHandle()
+
+    if qwindow is None:
+        return None
+
+    try:
+        import shiboken6
+        ptr = int(shiboken6.getCppPointer(qwindow)[0])
+        return ctypes.c_void_p(ptr)
+    except Exception as exc:
+        print(f"[overlay] Could not get QWindow pointer: {exc}", flush=True)
+        return None
+
 
 class OverlayView(QWebEngineView):
     """Frameless, always-on-top, transparent, dragged by its handle."""
@@ -138,11 +220,14 @@ class OverlayView(QWebEngineView):
         # The three settings that make it genuinely see-through. All are
         # required: dropping any one leaves an opaque window.
         self.setAttribute(Qt.WA_TranslucentBackground, True)
-        self.setWindowFlags(
+        flags = (
             Qt.FramelessWindowHint
             | Qt.WindowStaysOnTopHint
-            | Qt.Tool          # keeps it out of the taskbar and alt-tab
+            | Qt.Tool
         )
+        if WAYLAND_SESSION:
+            flags |= Qt.WindowDoesNotAcceptFocus
+        self.setWindowFlags(flags)
         self.page().setBackgroundColor(QColor(Qt.transparent))
         # Qt must not paint its own background before Chromium draws. On a
         # translucent window that pre-paint is a candidate for the visible
@@ -150,9 +235,35 @@ class OverlayView(QWebEngineView):
         # filled yet.
         self.setAttribute(Qt.WA_NoSystemBackground, True)
         self.setAttribute(Qt.WA_OpaquePaintEvent, False)
-        self.resize(size, size)
+
+        # En Wayland usamos una superficie transparente de pantalla completa.
+        # La región de entrada real se limita posteriormente a Raphael.
+        if WAYLAND_SESSION:
+            screen = QGuiApplication.primaryScreen()
+            if screen is not None:
+                screen_geo = screen.geometry()
+                self.setGeometry(screen_geo)
+                effective_size = min(
+                    screen_geo.width(),
+                    screen_geo.height(),
+                )
+            else:
+                self.resize(size, size)
+                effective_size = size
+        else:
+            self.resize(size, size)
+            effective_size = size
 
         self._filtered = None
+        self._wayland_layer = False
+        self._wayland_window_ptr = None
+        self._wayland_layer_lib = None
+        self._wayland_input = None
+        self._wayland_interactive_rects = []
+        self._drag_press_pos = None
+        self._dragging = False
+        self._drag_offset = None
+        self._drag_window_offset = None
         self.titleChanged.connect(self._on_title)
         # The render widget does not exist yet at construction time, so the
         # filter is installed once the page has loaded (and again on show).
@@ -162,7 +273,8 @@ class OverlayView(QWebEngineView):
         # applies a style rather than assuming one.
         self._hit_all = False
         # Linux/Wayland: keep only Raphael's circular visual area interactive.
-        self._mask_radius = max(1, int(size * 0.30))
+        # En pantalla completa el radio debe basarse en el tamaño real.
+        self._mask_radius = max(1, int(effective_size * 0.30))
         self._placed = False
         self._click_through = None
         self._ct_timer = QTimer(self)
@@ -202,15 +314,298 @@ class OverlayView(QWebEngineView):
         r = w * CORE_HIT_FRACTION
         return (dx * dx + dy * dy) <= r * r
 
-    def _update_input_mask(self):
-        # On Linux/Wayland, keep only Raphael's central area interactive.
-        # The rest of the transparent top-level window must pass clicks through.
-        if os.name == "nt":
+    def _apply_wayland_input_region(self, x, y, width, height):
+        if not (
+            WAYLAND_SESSION
+            and self._wayland_window_ptr
+            and self._wayland_input
+        ):
             return
+
+        w = max(1, self.width())
+        h = max(1, self.height())
+
+        x = max(0, min(int(x), w - 1))
+        y = max(0, min(int(y), h - 1))
+        width = max(1, min(int(width), w - x))
+        height = max(1, min(int(height), h - y))
+
+        self._wayland_interactive_rects = [(x, y, width, height)]
+
+        try:
+            result = self._wayland_input.gs_set_input_region(
+                self._wayland_window_ptr,
+                x,
+                y,
+                width,
+                height,
+            )
+
+            if result != 0:
+                print(
+                    f"[overlay] gs_set_input_region returned {result}",
+                    flush=True,
+                )
+
+        except Exception as exc:
+            print(
+                f"[overlay] Wayland native input-region update failed: {exc}",
+                flush=True,
+            )
+
+    def _apply_wayland_input_regions(self, rects):
+        """Apply multiple independent interactive rectangles to Wayland."""
+        if not (
+            WAYLAND_SESSION
+            and self._wayland_window_ptr
+            and self._wayland_input
+        ):
+            return
+
+        w = max(1, self.width())
+        h = max(1, self.height())
+
+        clean_rects = []
+
+        for rect in rects:
+            try:
+                x, y, width, height = rect
+
+                x = max(0, min(int(x), w - 1))
+                y = max(0, min(int(y), h - 1))
+                width = max(1, min(int(width), w - x))
+                height = max(1, min(int(height), h - y))
+
+                clean_rects.append((x, y, width, height))
+            except Exception:
+                continue
+
+        self._wayland_interactive_rects = clean_rects
+
+        if not clean_rects:
+            return
+
+        try:
+            values = []
+
+            for x, y, width, height in clean_rects:
+                values.extend([x, y, width, height])
+
+            array_type = ctypes.c_int * len(values)
+            rect_array = array_type(*values)
+
+            result = self._wayland_input.gs_set_input_regions(
+                self._wayland_window_ptr,
+                rect_array,
+                len(clean_rects),
+            )
+
+            if result != 0:
+                print(
+                    f"[overlay] gs_set_input_regions returned {result}",
+                    flush=True,
+                )
+
+        except Exception as exc:
+            print(
+                f"[overlay] Wayland native input-regions update failed: {exc}",
+                flush=True,
+            )
+
+    def _update_input_mask(self):
+
+        if WAYLAND_SESSION:
+            w, h = self.width(), self.height()
+
+            # El menú radial necesita toda la superficie.
+            # En modo desktop NO debemos capturar el fondo, ni siquiera
+            # durante el arrastre de Raphael.
+            if (
+                self._hit_all
+                and not (self._desktop and WAYLAND_SESSION)
+            ):
+                self._apply_wayland_input_region(0, 0, w, h)
+                return
+
+            # En modo desktop, preguntar al HTML por la posición real
+            # de Raphael. Así la región de Wayland sigue al icono.
+            if self._desktop:
+                # Raphael y el cuadro de subtítulos son zonas
+                # independientes dentro de la superficie Wayland.
+                def got_rects(rects):
+                    try:
+                        if not isinstance(rects, list):
+                            return
+
+                        clean_rects = []
+
+                        for rect in rects:
+                            if not isinstance(rect, dict):
+                                continue
+
+                            clean_rects.append((
+                                float(rect.get("x", 0)),
+                                float(rect.get("y", 0)),
+                                float(rect.get("width", 1)),
+                                float(rect.get("height", 1)),
+                            ))
+
+                        self._apply_wayland_input_regions(clean_rects)
+
+                    except Exception as exc:
+                        print(
+                            f"[overlay] invalid desktop input rects: {exc}",
+                            flush=True,
+                        )
+
+                try:
+                    self.page().runJavaScript(
+                        "window.__desktopCoreInteractiveRect "
+                        "? window.__desktopCoreInteractiveRect() : null",
+                        got_rects,
+                    )
+                except Exception as exc:
+                    print(
+                        f"[overlay] desktop input rect query failed: {exc}",
+                        flush=True,
+                    )
+                return
+
+            r = min(self._mask_radius, w // 2, h // 2)
+            cx, cy = w // 2, h // 2
+            self._apply_wayland_input_region(
+                cx - r, cy - r, r * 2, r * 2
+            )
+            return
+
+        # X11 keeps the old Qt mask path.
+        if os.name == "nt" or WAYLAND_SESSION:
+            return
+
         w, h = self.width(), self.height()
         r = min(self._mask_radius, w // 2, h // 2)
         cx, cy = w // 2, h // 2
         self.setMask(QRegion(cx - r, cy - r, r * 2, r * 2))
+
+    def _position_wayland_surface(self, point):
+        if not (
+            WAYLAND_SESSION
+            and self._wayland_window_ptr
+            and self._wayland_layer_lib
+        ):
+            return False
+
+        try:
+            screen = self.screen() or QGuiApplication.primaryScreen()
+            area = screen.geometry()
+
+            x = max(
+                area.left(),
+                min(
+                    int(point.x()),
+                    area.right() - self.width() + 1,
+                ),
+            )
+            y = max(
+                area.top(),
+                min(
+                    int(point.y()),
+                    area.bottom() - self.height() + 1,
+                ),
+            )
+
+            top = y - area.top()
+            right = area.right() - (x + self.width()) + 1
+
+            result = int(
+                self._wayland_layer_lib.gs_position_layer(
+                    self._wayland_window_ptr,
+                    int(top),
+                    int(right),
+                )
+            )
+
+            if result != 0:
+                print(
+                    f"[overlay] gs_position_layer returned {result}",
+                    flush=True,
+                )
+                return False
+
+            return True
+        except Exception as exc:
+            print(
+                f"[overlay] Wayland layer positioning failed: {exc}",
+                flush=True,
+            )
+            return False
+
+    def _place_wayland_top_right(self):
+        screen = self.screen() or QGuiApplication.primaryScreen()
+        area = screen.geometry()
+        point = QPoint(
+            area.right() - self.width() - MARGIN + 1,
+            area.top() + MARGIN,
+        )
+        return self._position_wayland_surface(point)
+
+    def _configure_wayland_layer(self):
+        if not WAYLAND_SESSION:
+            return False
+
+        layer, input_region = _load_wayland_native()
+        if layer is None:
+            print(
+                "[overlay] LayerShellQt bridge not available; "
+                "falling back to normal Qt window",
+                flush=True,
+            )
+            return False
+
+        ptr = _qwindow_cpp_pointer(self)
+        if ptr is None:
+            return False
+
+        self._wayland_window_ptr = ptr
+        self._wayland_input = input_region
+        self._wayland_layer_lib = layer
+
+        try:
+            result = int(
+                layer.gs_configure_layer(
+                    ptr,
+                    int(self.width()),
+                    int(self.height()),
+                    int(MARGIN),
+                    int(MARGIN),
+                )
+            )
+            ok = result == 0
+            if not ok:
+                print(
+                    f"[overlay] gs_configure_layer returned {result}",
+                    flush=True,
+                )
+        except Exception as exc:
+            print(
+                f"[overlay] LayerShellQt configuration failed: {exc}",
+                flush=True,
+            )
+            return False
+
+        self._wayland_layer = ok
+
+        if ok:
+            # Posición inicial: esquina superior derecha.
+            self._place_wayland_top_right()
+
+            print(
+                "[overlay] Wayland LayerShellQt overlay enabled",
+                flush=True,
+            )
+            self._update_input_mask()
+
+        return ok
 
     def _set_click_through(self, on: bool):
         # Windows uses WS_EX_TRANSPARENT. KDE Wayland does not expose
@@ -244,6 +639,13 @@ class OverlayView(QWebEngineView):
     def _poll_desktop_hover(self):
         if not self._desktop or not self.isVisible():
             return
+
+        # El caption puede aparecer/desaparecer o cambiar de tamaño
+        # mientras Raphael permanece en el mismo sitio. Recalcular la
+        # región nativa mantiene ambos elementos interactivos sin hacer
+        # clickeable el fondo transparente.
+        self._update_input_mask()
+
         p = QCursor.pos()
 
         def got_core(core):
@@ -284,10 +686,10 @@ class OverlayView(QWebEngineView):
             # opened settings, throwing away wherever he had dragged it.
             if not self._placed:
                 self._placed = True
-                if self._desktop:
-                    place_top_right(self, self.width())
-                else:
-                    place_top_right(self, self.width())
+                # LayerShellQt owns the position on Wayland.
+                if not self._wayland_layer:
+                    if not WAYLAND_SESSION:
+                        place_top_right(self, self.width())
             self.show()
             if os.name == "nt":
                 _apply_ws_border(self)
@@ -300,9 +702,11 @@ class OverlayView(QWebEngineView):
             return
         if title.strip() == HIT_ALL_SENTINEL:
             self._hit_all = True
+            self._update_input_mask()
             return
         if title.strip() == HIT_CORE_SENTINEL:
             self._hit_all = False
+            self._update_input_mask()
             return
         if title.strip() == HIDE_SENTINEL:
             self.hide()
@@ -340,21 +744,143 @@ class OverlayView(QWebEngineView):
             proxy.installEventFilter(self)
             self._filtered = proxy
 
+    def _point_inside_wayland_rect(self, pos):
+        rects = self._wayland_interactive_rects
+
+        if not rects:
+            return False
+
+        px, py = pos.x(), pos.y()
+
+        for x, y, w, h in rects:
+            if x <= px <= x + w and y <= py <= y + h:
+                return True
+
+        return False
+
     def eventFilter(self, obj, event):
         et = event.type()
+
+        if WAYLAND_SESSION and self._desktop:
+            if et == QEvent.MouseButtonPress:
+                if event.button() == Qt.LeftButton:
+                    pos = event.position().toPoint()
+
+                    if self._point_inside_wayland_rect(pos):
+                        self._drag_press_pos = event.globalPosition().toPoint()
+                        self._drag_offset = None
+                        self._drag_window_offset = (
+                            self._drag_press_pos - self.frameGeometry().topLeft()
+                        )
+                        self._dragging = False
+                        return False
+
+            elif et == QEvent.MouseMove:
+                if (
+                    self._drag_press_pos is not None
+                    and (event.buttons() & Qt.LeftButton)
+                ):
+                    current = event.globalPosition().toPoint()
+
+                    dx = current.x() - self._drag_press_pos.x()
+                    dy = current.y() - self._drag_press_pos.y()
+
+                    if not self._dragging and (dx * dx + dy * dy) >= 36:
+                        self._dragging = True
+
+                        try:
+                            self.page().runJavaScript(
+                                "window.__desktopSetHostDragging "
+                                "&& window.__desktopSetHostDragging(true);"
+                            )
+                        except Exception:
+                            pass
+
+                    if self._dragging:
+                        speed = (dx * dx + dy * dy) ** 0.5
+
+                        # Move the REAL Wayland LayerShell surface.
+                        # Raphael remains centered inside that surface;
+                        # the desktop position belongs to the host window.
+                        offset = self._drag_window_offset or QPoint(0, 0)
+                        new_top_left = current - offset
+
+                        if not self._position_wayland_surface(new_top_left):
+                            print(
+                                "[overlay] Could not move the Wayland surface",
+                                flush=True,
+                            )
+
+                        # JavaScript only receives movement data for mood
+                        # detection (HAPPY / CONFUSED / ANNOYED).
+                        try:
+                            self.page().runJavaScript(
+                                "window.__desktopSetDragPosition "
+                                "&& window.__desktopSetDragPosition(%s,%s,%s,%s,%s);"
+                                % (
+                                    current.x(),
+                                    current.y(),
+                                    dx,
+                                    dy,
+                                    speed,
+                                )
+                            )
+                        except Exception as exc:
+                            print(
+                                f"[overlay] desktop drag JS failed: {exc}",
+                                flush=True,
+                            )
+
+                        return True
+
+            elif et == QEvent.MouseButtonRelease:
+                if event.button() == Qt.LeftButton:
+                    was_dragging = self._dragging
+
+                    self._drag_press_pos = None
+                    self._drag_offset = None
+                    self._drag_window_offset = None
+                    self._dragging = False
+
+                    if was_dragging:
+                        try:
+                            self.page().runJavaScript(
+                                "window.__desktopSetHostDragging "
+                                "&& window.__desktopSetHostDragging(false);"
+                            )
+                        except Exception:
+                            pass
+
+                        self._update_input_mask()
+                        return True
+
+        # Panel/Windows/X11 handling.
         if et == QEvent.MouseButtonPress:
-            if (event.button() == Qt.LeftButton
-                    and self._in_handle(event.position())):
-                self._drag_from = (event.globalPosition().toPoint()
-                                   - self.frameGeometry().topLeft())
-                return True      # swallow, or the page reacts to it too
-        elif et == QEvent.MouseMove:
-            if self._drag_from is not None and (event.buttons() & Qt.LeftButton):
-                self.move(self._clamp_to_screen(
-                    event.globalPosition().toPoint() - self._drag_from))
+            if (
+                event.button() == Qt.LeftButton
+                and self._in_handle(event.position())
+            ):
+                self._drag_from = (
+                    event.globalPosition().toPoint()
+                    - self.frameGeometry().topLeft()
+                )
                 return True
+
+        elif et == QEvent.MouseMove:
+            if (
+                self._drag_from is not None
+                and (event.buttons() & Qt.LeftButton)
+            ):
+                self.move(
+                    self._clamp_to_screen(
+                        event.globalPosition().toPoint() - self._drag_from
+                    )
+                )
+                return True
+
         elif et in (QEvent.MouseButtonRelease, QEvent.Leave):
             self._drag_from = None
+
         return super().eventFilter(obj, event)
 
     def _clamp_to_screen(self, point):
@@ -650,6 +1176,9 @@ def main() -> int:
 
     view = OverlayView(args.size)
 
+    if WAYLAND_SESSION:
+        view._configure_wayland_layer()
+
     url = args.url or QUrl.fromLocalFile(
         os.path.join(HERE, "hud_prototype.html")).toString()
     view.load(QUrl(url + MINI_QUERY))
@@ -662,7 +1191,9 @@ def main() -> int:
     # leaving an invisible process running with no window.
     def _failsafe():
         if not view.isVisible():
-            place_top_right(view, args.size)
+            # LayerShell ya determina la geometría en Wayland.
+            if not WAYLAND_SESSION:
+                place_top_right(view, args.size)
             view.show()
 
     QTimer.singleShot(12000, _failsafe)
