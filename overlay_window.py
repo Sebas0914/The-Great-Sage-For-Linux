@@ -1146,6 +1146,27 @@ def main() -> int:
 
     app = QApplication(sys.argv)
 
+    # --panel is a separate process and must never claim the overlay PID
+    # file or install the overlay's SIGUSR handlers.
+    if args.panel:
+        panel = PanelView(args.panel)
+
+        def _on_panel_title(t):
+            cmd = t.strip()
+            if cmd == "GS_PANEL_CLOSE":
+                app.quit()
+            elif cmd == "GS_PANEL_MIN":
+                panel.showMinimized()
+
+        panel.titleChanged.connect(_on_panel_title)
+        url = args.url or QUrl.fromLocalFile(
+            os.path.join(HERE, "hud_prototype.html")).toString()
+        panel.load(QUrl(f"{url}?panel={args.panel}"))
+        panel.show()
+        if os.name == "nt":
+            _apply_ws_border(panel)
+        return app.exec()
+
     if os.name != "nt":
         try:
             with open(OVERLAY_PID_FILE, "w", encoding="utf-8") as fh:
@@ -1171,32 +1192,6 @@ def main() -> int:
         app.aboutToQuit.connect(
             lambda: os.path.exists(OVERLAY_PID_FILE) and os.unlink(OVERLAY_PID_FILE)
         )
-
-    # --panel: a settings/history window instead of the overlay. Opaque and
-    # ordinary - it shows forms and lists, so transparency would only make
-    # them harder to read - but still frameless, with the page drawing its
-    # own title bar to match the log console.
-    if args.panel:
-        panel = PanelView(args.panel)
-
-        # Commands from the page arrive as title changes - there is no
-        # window.pywebview.api under Qt, so a title channel is the simplest
-        # bridge that needs no extra plumbing.
-        def _on_panel_title(t):
-            cmd = t.strip()
-            if cmd == "GS_PANEL_CLOSE":
-                app.quit()
-            elif cmd == "GS_PANEL_MIN":
-                panel.showMinimized()
-
-        panel.titleChanged.connect(_on_panel_title)
-        url = args.url or QUrl.fromLocalFile(
-            os.path.join(HERE, "hud_prototype.html")).toString()
-        panel.load(QUrl(f"{url}?panel={args.panel}"))
-        panel.show()
-        if os.name == "nt":
-            _apply_ws_border(panel)
-        return app.exec()
 
     view = OverlayView(args.size)
 
