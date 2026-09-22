@@ -4,7 +4,7 @@ A Linux-first desktop AI companion with a 3D HUD, local voice pipeline, explicit
 
 ## Current platform support
 
-- **Linux / KDE Plasma / Wayland:** platform adapter, XDG GlobalShortcuts hotkey integration, KWin active-window bridge, application/path/URL launching, and KDE Spectacle screen capture.
+- **Linux / KDE Plasma / Wayland:** platform adapter, XDG GlobalShortcuts hotkey integration, KWin active-window bridge, application/path/URL launching, KDE Spectacle screen capture, and a fullscreen LayerShellQt HUD with native Wayland input regions.
 - **Linux / X11:** platform adapter, configurable X11 global shortcut, active-window detection, and the same safe launcher interface.
 - **Windows:** the existing Windows platform implementation remains available; Linux work is isolated behind the platform abstraction.
 
@@ -113,7 +113,7 @@ CI runs these checks on the Linux development branch and pull requests.
 ## Known limitations
 
 - A real KDE Wayland session is required to validate the desktop integrations end-to-end; CI validates their contracts but cannot reproduce the user's desktop session.
-- The original transparent/click-through overlay host is Windows-specific. Linux currently uses the normal native HUD window rather than pretending the Win32 overlay works.
+- Linux Wayland uses LayerShellQt for the transparent fullscreen HUD. Raphael and the caption box are the only interactive regions; the rest of the surface is click-through.
 - Screen capture depends on KDE Spectacle being available.
 - NVIDIA-hosted AI requires an API key and network access.
 - F5-TTS, faster-whisper, and the optional Raphael RVC stage have substantial model/runtime dependencies.
