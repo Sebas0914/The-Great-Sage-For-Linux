@@ -15,9 +15,10 @@ import sys
 ACTIVE_PROVIDER = os.environ.get("GREAT_SAGE_PROVIDER", "nvidia")
 AI_ROUTING_MODE = os.environ.get("GREAT_SAGE_AI_MODE", "nvidia_first").lower()
 NVIDIA_API_BASE_URL = os.environ.get("GREAT_SAGE_NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1")
-NVIDIA_API_MODEL_FAST = os.environ.get("GREAT_SAGE_NVIDIA_FAST_MODEL", "openai/gpt-oss-20b")
-NVIDIA_API_MODEL_COMPLEX = os.environ.get("GREAT_SAGE_NVIDIA_COMPLEX_MODEL", "nvidia/nemotron-3-super-120b-a12b")
+NVIDIA_API_MODEL_FAST = os.environ.get("GREAT_SAGE_NVIDIA_FAST_MODEL", "nvidia/nemotron-3-nano-30b-a3b")
+NVIDIA_API_MODEL_COMPLEX = os.environ.get("GREAT_SAGE_NVIDIA_COMPLEX_MODEL", "nvidia/nemotron-3.5-lightning-30b-a3b")
 NVIDIA_API_TIMEOUT = int(os.environ.get("GREAT_SAGE_NVIDIA_TIMEOUT", "120"))
+# Nemotron 3.5 Lightning: keep IA1/classification non-thinking and give IA2 a bounded reasoning budget.\nNVIDIA_FAST_REASONING_BUDGET = int(os.environ.get("GREAT_SAGE_NVIDIA_FAST_REASONING_BUDGET", "0"))\nNVIDIA_COMPLEX_REASONING_BUDGET = int(os.environ.get("GREAT_SAGE_NVIDIA_COMPLEX_REASONING_BUDGET", "8192"))
 LOCAL_ONLY = os.environ.get("GREAT_SAGE_LOCAL_ONLY", "false").lower() in {"1", "true", "yes", "on"}
 WEB_TOOLS_ENABLED = os.environ.get("GREAT_SAGE_WEB_TOOLS", "false").lower() in {"1", "true", "yes", "on"}
 INPUT_LANGUAGE = os.environ.get("GREAT_SAGE_INPUT_LANGUAGE", "es")
@@ -74,7 +75,7 @@ OLLAMA_HOST = os.environ.get("GREAT_SAGE_OLLAMA_HOST", "http://localhost:11434")
 #
 # To go back without editing this file:
 #   set GREAT_SAGE_OLLAMA_MODEL=<some other pulled model>
-OLLAMA_DEFAULT_MODEL = os.environ.get("GREAT_SAGE_OLLAMA_MODEL", "qwen2.5:7b-instruct")
+OLLAMA_DEFAULT_MODEL = os.environ.get("GREAT_SAGE_OLLAMA_MODEL", "qwen3.5:4b")
 
 # Reasoning models deliberate before answering, and Ollama streams that
 # deliberation on a separate channel - so the content stream stays silent
