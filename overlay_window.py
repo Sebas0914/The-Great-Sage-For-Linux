@@ -260,6 +260,7 @@ class OverlayView(QWebEngineView):
         self._wayland_layer_lib = None
         self._wayland_input = None
         self._wayland_interactive_rects = []
+        self._input_mask_generation = 0
         self._drag_press_pos = None
         self._dragging = False
         self._drag_offset = None
@@ -412,6 +413,8 @@ class OverlayView(QWebEngineView):
     def _update_input_mask(self):
 
         if WAYLAND_SESSION:
+            self._input_mask_generation += 1
+            generation = self._input_mask_generation
             w, h = self.width(), self.height()
 
             # El menú radial necesita toda la superficie.
@@ -438,6 +441,10 @@ class OverlayView(QWebEngineView):
                 # independientes dentro de la superficie Wayland.
                 def got_rects(rects):
                     try:
+                        # JavaScript callbacks can arrive out of order. Ignore
+                        # a result from an older geometry query.
+                        if generation != self._input_mask_generation or self._dragging:
+                            return
                         if not isinstance(rects, list):
                             return
 
@@ -790,6 +797,7 @@ class OverlayView(QWebEngineView):
 
                     if not self._dragging and (dx * dx + dy * dy) >= 36:
                         self._dragging = True
+                        self._input_mask_generation += 1
 
                         # Temporarily make the whole fullscreen surface
                         # interactive so the pointer cannot leave the
