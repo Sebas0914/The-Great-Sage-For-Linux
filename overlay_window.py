@@ -454,12 +454,21 @@ class OverlayView(QWebEngineView):
                             if not isinstance(rect, dict):
                                 continue
 
-                            clean_rects.append((
-                                float(rect.get("x", 0)),
-                                float(rect.get("y", 0)),
-                                float(rect.get("width", 1)),
-                                float(rect.get("height", 1)),
-                            ))
+                            x = float(rect.get("x", 0))
+                        y = float(rect.get("y", 0))
+                        rw = float(rect.get("width", 1))
+                        rh = float(rect.get("height", 1))
+
+                        # Clamp every rectangle to the actual Qt surface.
+                        # A stale/partially off-screen DOM rect must never
+                        # create an input region outside the LayerShell
+                        # surface, and zero-sized rectangles are discarded.
+                        x1 = max(0.0, min(float(w), x))
+                        y1 = max(0.0, min(float(h), y))
+                        x2 = max(x1, min(float(w), x + rw))
+                        y2 = max(y1, min(float(h), y + rh))
+                        if x2 > x1 and y2 > y1:
+                            clean_rects.append((x1, y1, x2 - x1, y2 - y1))
 
                         self._apply_wayland_input_regions(clean_rects)
 
