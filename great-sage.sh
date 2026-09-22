@@ -52,7 +52,7 @@ show_overlay() {
     opid="$(cat "$OVERLAY_PIDFILE" 2>/dev/null || true)"
     if [ -n "$opid" ] && kill -USR1 "$opid" 2>/dev/null; then return 0; fi
   fi
-  if is_running && [ -x "$ROOT/.overlay-venv/bin/python" ]; then
+  if is_running && [ -x "$PY" ]; then
     "$PY" "$ROOT/overlay_window.py" >/dev/null 2>&1 &
   fi
 }
