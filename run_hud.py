@@ -689,6 +689,52 @@ def main() -> int:
             "--autoplay-policy=no-user-gesture-required",
         )
 
+    # En Linux/Wayland NO creamos ningún host pywebview.
+    # El único elemento visual debe ser overlay_window.py, que usa
+    # LayerShellQt y por tanto se comporta como una capa del escritorio,
+    # no como una ventana normal de KDE.
+    if os.name != "nt":
+        import subprocess
+
+        here = os.path.dirname(os.path.abspath(__file__))
+        script = os.path.join(here, "overlay_window.py")
+
+        overlay_python = os.path.join(
+            here, ".overlay-venv", "bin", "python"
+        )
+        interpreter = (
+            overlay_python
+            if os.path.exists(overlay_python)
+            else sys.executable
+        )
+
+        cmd = [
+            interpreter,
+            script,
+            "--size",
+            str(OVERLAY_SIZE),
+        ]
+
+        log.info(
+            "Starting Linux overlay directly: %s",
+            " ".join(cmd),
+        )
+
+        proc = subprocess.Popen(
+            cmd,
+            cwd=here,
+        )
+
+        try:
+            return proc.wait()
+        except KeyboardInterrupt:
+            log.info("Stopping Linux overlay")
+            try:
+                proc.terminate()
+            except Exception:
+                pass
+            return 0
+
     html_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "hud_prototype.html")
     api = _HudHostApi()
     # transparent=True is set even though the app starts full-size, because

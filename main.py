@@ -240,6 +240,9 @@ def build_voice_lines(set_name=None):
     through to live TTS, exactly as a disabled line does, so a partial
     set is a valid choice rather than a broken one.
     """
+    if not getattr(settings, "VOICE_PRE_RECORDED_ENABLED", True):
+        return []
+
     sets = getattr(settings, "VOICE_LINE_SETS", None)
     if sets:
         name = set_name or active_voice_line_set()

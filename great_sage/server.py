@@ -181,6 +181,12 @@ PORT = 8765
 
 log = logging.getLogger(__name__)
 
+# Only one complete chat turn may run at a time.
+CHAT_TURN_LOCK = threading.Lock()
+
+# Prevent concurrent Great Sage replies from sharing one audio sink.
+VOICE_PLAYBACK_LOCK = threading.Lock()
+
 # Pre-routed tools that DO something rather than report something. When one
 # of these runs, the request has been carried out and the turn is finished
 # - see the silent-action branch in the chat thread below.
@@ -583,6 +589,74 @@ def _deep_review(provider, question, draft):
     return out
 
 
+def _translate_spoken_japanese(provider, text: str) -> str:
+    """Create the Japanese copy used ONLY by the spoken voice."""
+    value = (text or "").strip()
+    if not value:
+        return ""
+
+    def looks_japanese(value: str) -> bool:
+        # Hiragana, Katakana, or CJK ideographs.
+        # Use code points directly so the check cannot be confused
+        # by string escaping.
+        return any(
+            0x3040 <= ord(ch) <= 0x30FF
+            or 0x3400 <= ord(ch) <= 0x4DBF
+            or 0x4E00 <= ord(ch) <= 0x9FFF
+            for ch in value
+        )
+
+    def translate(instruction: str) -> str:
+        out = provider.send_message([
+            {
+                "role": "system",
+                "content": (
+                    "You are Great Sage's Japanese speech-localization "
+                    "component. ALWAYS output natural spoken Japanese. "
+                    "Never answer in English or Spanish. Preserve names, "
+                    "numbers, commands, code, and technical identifiers "
+                    "when they should remain unchanged. Output only the "
+                    "translation, with no explanation."
+                ),
+            },
+            {
+                "role": "user",
+                "content": instruction + "\n\nREPLY:\n" + value,
+            },
+        ])
+        return (out or "").strip()
+
+    try:
+        translated = translate(
+            "Translate this reply into natural Japanese for Raphael to speak."
+        )
+
+        # If the first attempt is clearly not Japanese, force a second pass.
+        if len(value) > 5 and not looks_japanese(translated):
+            translated = translate(
+                "IMPORTANT: The previous result was not Japanese. "
+                "Translate again. The output MUST contain Japanese text."
+            )
+
+        if translated:
+            if len(value) > 5 and not looks_japanese(translated):
+                log.error(
+                    "Japanese speech translation returned non-Japanese text; "
+                    "speech for this turn will be skipped."
+                )
+                return ""
+            log.info(
+                "Japanese speech text ready: %s",
+                translated[:120].replace("\\n", " ")
+            )
+            return translated
+
+    except Exception:
+        log.exception("Japanese speech translation failed")
+
+    return ""
+
+
 def _handle_chat(text, engine, voice, sink, websocket, loop,
                  think=False, conversational_follow_up=False,
                  follow_up_listener=None) -> None:
@@ -643,6 +717,7 @@ def _handle_chat(text, engine, voice, sink, websocket, loop,
     # result still dropped the ends of sentences. One clip has no seams.
     streaming_speech = (
         not getattr(settings, "VOICE_SINGLE_SHOT", True)
+        and not getattr(settings, "VOICE_SPEAK_JAPANESE", True)
         and voice is not None
         and hasattr(voice, "speak_stream")
         and voice.current_sink is sink
@@ -653,7 +728,10 @@ def _handle_chat(text, engine, voice, sink, websocket, loop,
 
     def speak_worker():
         try:
-            voice.speak_stream(iter(text_q.get, None), timer=timer)
+            # The voice engine and BrowserAudioSink are shared by all chat
+            # threads. Only one reply may own them at a time.
+            with VOICE_PLAYBACK_LOCK:
+                voice.speak_stream(iter(text_q.get, None), timer=timer)
         except BaseException as exc:  # re-raised on this thread below
             speech_error.append(exc)
 
@@ -809,25 +887,10 @@ def _handle_chat(text, engine, voice, sink, websocket, loop,
         return
 
     try:
-        # Subtitles are an independent Spanish rendering of the delivered
-        # reply. Generate them in parallel with F5/RVC so the extra model call
-        # does not have to block the start of speech.
+        # Spanish subtitles are derived from the exact Japanese text
+        # that will be spoken, so the visible subtitle and Raphael's voice
+        # represent the same content.
         subtitle_worker = None
-        if guarded.strip():
-            def emit_spanish_subtitles():
-                translated = _translate_subtitles(engine.provider, guarded)
-                if translated:
-                    try:
-                        send({"type": "subtitle_text", "text": translated})
-                    except websockets.exceptions.ConnectionClosed:
-                        pass
-
-            subtitle_worker = threading.Thread(
-                target=emit_spanish_subtitles,
-                daemon=True,
-                name="spanish-subtitles",
-            )
-            subtitle_worker.start()
 
         if speaker is not None:
             end_stream()
@@ -855,7 +918,34 @@ def _handle_chat(text, engine, voice, sink, websocket, loop,
             # its formatting while the ear is spared. Smaller models need
             # this - qwen2.5:3b leaked markdown on 3/3 list-inviting
             # prompts, and hardening the prompt only reached 1/3.
-            voice.speak(cap_for_speech(speakable("".join(reply_chunks))))
+            spoken_reply = _translate_spoken_japanese(
+                engine.provider, guarded
+            )
+            if spoken_reply:
+                subtitle_worker = threading.Thread(
+                    target=lambda: (
+                        send({
+                            "type": "subtitle_text",
+                            "text": _translate_subtitles(
+                                engine.provider,
+                                spoken_reply,
+                            ),
+                        })
+                    ),
+                    daemon=True,
+                    name="spanish-subtitles",
+                )
+                subtitle_worker.start()
+
+                with VOICE_PLAYBACK_LOCK:
+                    voice.speak(
+                        cap_for_speech(speakable(spoken_reply))
+                    )
+            else:
+                log.warning(
+                    "Skipping spoken audio because no valid Japanese "
+                    "translation was produced."
+                )
     except VoiceError as exc:
         log.exception("Voice/audio error speaking reply to %r", text)
         try:
@@ -924,11 +1014,22 @@ def _start_chat_thread(text, engine, voice, sink, websocket, loop,
     # out would leave no trace anywhere, exactly as the STT failure did.
     # _handle_chat guards its own body, but anything raised before that
     # try block would still escape.
+    def run_chat_turn():
+        with CHAT_TURN_LOCK:
+            _handle_chat(
+                text,
+                engine,
+                voice,
+                sink,
+                websocket,
+                loop,
+                think=think,
+                conversational_follow_up=conversational_follow_up,
+                follow_up_listener=follow_up_listener,
+            )
+
     threading.Thread(
-        target=_log_exceptions(_handle_chat, "chat reply"),
-        args=(text, engine, voice, sink, websocket, loop),
-        kwargs={"think": think, "conversational_follow_up": conversational_follow_up,
-                "follow_up_listener": follow_up_listener},
+        target=_log_exceptions(run_chat_turn, "chat reply"),
         daemon=True,
     ).start()
 

@@ -629,6 +629,9 @@ VOICE_CANDIDATES_DIR = os.path.join("voice_samples", "candidates")
 # Set to False to run text-only with no voice module involved at all.
 VOICE_ENABLED = True
 
+# Spoken language for Raphael/F5.
+VOICE_SPEAK_JAPANESE = True
+
 # Which voice engine to use:
 #   "sapi5"  - Windows built-in voices via pyttsx3. Always works.
 #   "pocket" - your own cloned voice via Kyutai's Pocket TTS. CPU-only,
@@ -756,7 +759,7 @@ CLONE_SPEED = 1.15
 # speed divides the estimated duration, so BELOW 1.0 is slower and
 # clearer. 0.92 is a small, deliberate stretch: enough to stop the rush
 # without sounding sedated.
-F5_SPEED = 0.92
+F5_SPEED = 0.86
 
 # Above this many characters, a reply is synthesized in sentence-sized
 # pieces and joined into ONE clip rather than generated in a single pass.
@@ -764,8 +767,8 @@ F5_SPEED = 0.92
 # asked to cover, so the fix is to ask it to cover less - while still
 # handing the player a single clip, which is what VOICE_SINGLE_SHOT
 # exists to guarantee (no seams, no gaps, no second audio element).
-F5_CHUNK_THRESHOLD_CHARS = 260
-F5_CHUNK_TARGET_CHARS = 220
+F5_CHUNK_THRESHOLD_CHARS = 220
+F5_CHUNK_TARGET_CHARS = 180
 
 # --- Raphael RVC v2 post-processing ------------------------------------
 # Third-party model weights are intentionally not bundled or downloaded.
@@ -832,6 +835,8 @@ VOICE_LINES_DIR = os.environ.get(
 # HUD's VOICE LINES panel and persisted to HUD_SETTINGS_PATH, so this is
 # only the fallback for a fresh install.
 VOICE_LINE_SET = "japanese"
+# Pre-recorded phrase clips disabled: use live TTS only.
+VOICE_PRE_RECORDED_ENABLED = False
 
 # English clips live in the project's voice_lines/ folder - FLAT, not in
 # a subfolder. That is not cosmetic: the HUD previews a clip by
@@ -866,16 +871,4 @@ VOICE_LINE_SETS = {
     ],
 }
 
-VOICE_LINES = [
-    (r"Notice\.", os.path.join(VOICE_LINES_DIR, "koku.ogg")),
-    (
-        r"^\s*Good morning,\s*Master\.",
-        os.path.join(VOICE_LINES_DIR, "kidou.ogg"),
-    ),
-    (r"Beginning analysis\.", os.path.join(VOICE_LINES_DIR, "kaiseki_kaishi.ogg")),
-    (r"Analysis complete\.", os.path.join(VOICE_LINES_DIR, "kaiseki_kanryou.ogg")),
-    (r"Analysis failed\.", os.path.join(VOICE_LINES_DIR, "kaiseki_shippai.ogg")),
-    (r"Approved\.", os.path.join(VOICE_LINES_DIR, "shounin.ogg")),
-    (r"Not yet acquired\.", os.path.join(VOICE_LINES_DIR, "mishutoku.ogg")),
-    (r"Target confirmed\.", os.path.join(VOICE_LINES_DIR, "taishou_kakunin.ogg")),
-]
+VOICE_LINES = []
