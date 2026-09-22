@@ -50,7 +50,7 @@ extern "C" int gs_set_input_regions(
     auto *window = static_cast<QWindow *>(window_ptr);
     if (!window) return 1;
 
-    if (!rects || count <= 0) return 2;
+    if (!rects || count < 0) return 2;
 
     auto *native = QGuiApplication::platformNativeInterface();
     if (!native) return 3;
