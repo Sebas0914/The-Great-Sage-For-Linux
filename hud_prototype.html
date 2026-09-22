@@ -5319,7 +5319,7 @@ const MINI_CHAT_PAD = 3;
     captionBox.classList.toggle('move-mode', moveMode);
   });
   captionBox.addEventListener('mousedown', (e) => {
-    if (!moveMode) return;
+    if (!moveMode && !DESKTOP_RAPHAEL_MODE) return;
     draggingCaption = true;
     captionBox.classList.add('dragging');
     // Switch from the centered left:50%+transform scheme to absolute
@@ -5351,6 +5351,10 @@ const MINI_CHAT_PAD = 3;
     const centerX = (window.innerWidth - captionBox.offsetWidth) / 2;
     if (Math.abs(x - centerX) < CENTER_SNAP_RADIUS) x = centerX;
 
+    const maxLeft = Math.max(0, window.innerWidth - captionBox.offsetWidth);
+    const maxTop = Math.max(0, window.innerHeight - captionBox.offsetHeight);
+    x = Math.min(Math.max(0, x), maxLeft);
+    y = Math.min(Math.max(0, y), maxTop);
     captionBox.style.left = x + 'px';
     captionBox.style.top = y + 'px';
   });
