@@ -1549,6 +1549,17 @@ html.desktop-raphael, body.desktop-raphael {
 body.desktop-raphael #canvas-wrap {
   background: transparent !important;
 }
+body.desktop-raphael #canvas-wrap canvas {
+  background: transparent !important;
+}
+/* Desktop Raphael is a pure overlay: the full chat composer belongs to the
+   normal chat UI and must never appear on the desktop surface. */
+body.desktop-raphael #chat-bar,
+body.desktop-raphael #chat-bar * {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
 body.desktop-raphael #mini-chat {
   display: none !important;
 }
