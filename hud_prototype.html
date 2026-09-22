@@ -4598,6 +4598,17 @@ Hey Ciel</textarea>
     return rects;
   };
 
+  let desktopDragGrabOffsetX = 0;
+  let desktopDragGrabOffsetY = 0;
+
+  window.__desktopBeginDrag = (xPx, yPx) => {
+    if (!DESKTOP_RAPHAEL_MODE) return;
+    const core = coreScreenPosition();
+    if (!core || !Number.isFinite(core.x) || !Number.isFinite(core.y)) return;
+    desktopDragGrabOffsetX = Number(xPx) - core.x;
+    desktopDragGrabOffsetY = Number(yPx) - core.y;
+  };
+
   // El host Qt usa esto mientras se arrastra el icono. La superficie
   // Wayland sigue ocupando toda la pantalla; solamente movemos Raphael
   // dentro de ella.
@@ -4608,13 +4619,15 @@ Hey Ciel</textarea>
     // the Three.js scene using the cursor position supplied by the host.
     if (Number.isFinite(xPx) && Number.isFinite(yPx)) {
       desktopDragOverride = true;
+      const targetX = Number(xPx) - desktopDragGrabOffsetX;
+      const targetY = Number(yPx) - desktopDragGrabOffsetY;
       desktopTarget.x = Math.max(
         0.08,
-        Math.min(0.94, Number(xPx) / Math.max(1, window.innerWidth))
+        Math.min(0.94, targetX / Math.max(1, window.innerWidth))
       );
       desktopTarget.y = Math.max(
         0.10,
-        Math.min(0.88, Number(yPx) / Math.max(1, window.innerHeight))
+        Math.min(0.88, targetY / Math.max(1, window.innerHeight))
       );
     }
 
