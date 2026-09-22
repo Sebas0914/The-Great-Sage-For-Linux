@@ -721,21 +721,78 @@ def _web_search(query: str) -> str:
             "read it):" % q) + chr(10) + chr(10).join(out)
 
 
+def _web_host_is_public(hostname: str) -> bool:
+    """Reject loopback/private/link-local/reserved destinations, including DNS results."""
+    import ipaddress as _ip
+    import socket as _socket
+    host = (hostname or "").strip().rstrip(".")
+    if not host:
+        return False
+    try:
+        infos = _socket.getaddrinfo(host, None, type=_socket.SOCK_STREAM)
+    except OSError:
+        return False
+    for info in infos:
+        try:
+            addr = _ip.ip_address(info[4][0])
+        except ValueError:
+            return False
+        if (
+            addr.is_private or addr.is_loopback or addr.is_link_local
+            or addr.is_reserved or addr.is_multicast or addr.is_unspecified
+        ):
+            return False
+    return True
+
+
 def _web_fetch(url: str) -> str:
     _require_web()
+    import requests
+    from urllib.parse import urljoin, urlparse
+
     u = (url or "").strip()
     low = u.lower()
     if not low.startswith("http://") and not low.startswith("https://"):
         if "://" in u:
             raise ToolError("Refused: only http and https can be fetched.")
         u = "https://" + u
-    import requests
+
+    # Validate every redirect hop. Never let a public URL redirect into a
+    # private/loopback service.
+    for _ in range(5):
+        parsed = urlparse(u)
+        if parsed.scheme not in ("http", "https") or not parsed.hostname:
+            raise ToolError("Refused: only public http/https pages can be fetched.")
+        if not _web_host_is_public(parsed.hostname):
+            raise ToolError("Refused: internal or private network destinations cannot be fetched.")
+        try:
+            r = requests.get(
+                u, timeout=25, allow_redirects=False,
+                headers={"User-Agent": "Mozilla/5.0 GreatSage"},
+            )
+            if 300 <= r.status_code < 400 and r.headers.get("Location"):
+                u = urljoin(u, r.headers["Location"])
+                continue
+            r.raise_for_status()
+            break
+        except ToolError:
+            raise
+        except Exception as exc:
+            raise ToolError("Could not fetch %s: %s" % (u, type(exc).__name__))
+    else:
+        raise ToolError("Too many redirects while fetching the page.")
+
+    # Do not download unbounded response bodies into memory.
+    max_bytes = 2 * 1024 * 1024
+    content_length = r.headers.get("content-length")
     try:
-        r = requests.get(u, timeout=25, allow_redirects=True,
-                         headers={"User-Agent": "Mozilla/5.0 GreatSage"})
-        r.raise_for_status()
-    except Exception as exc:
-        raise ToolError("Could not fetch %s: %s" % (u, type(exc).__name__))
+        if content_length and int(content_length) > max_bytes:
+            raise ToolError("The page is too large to read safely.")
+    except ValueError:
+        pass
+    if len(r.content) > max_bytes:
+        raise ToolError("The page is too large to read safely.")
+
     ctype = (r.headers.get("content-type") or "").lower()
     if "html" not in ctype and "text" not in ctype:
         raise ToolError("That is not a readable page (%s)." % (ctype or "?"))
