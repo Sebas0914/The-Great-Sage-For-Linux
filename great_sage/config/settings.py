@@ -18,6 +18,8 @@ NVIDIA_API_BASE_URL = os.environ.get("GREAT_SAGE_NVIDIA_BASE_URL", "https://inte
 NVIDIA_API_MODEL_FAST = os.environ.get("GREAT_SAGE_NVIDIA_FAST_MODEL", "nvidia/nemotron-3-nano-30b-a3b")
 NVIDIA_API_MODEL_COMPLEX = os.environ.get("GREAT_SAGE_NVIDIA_COMPLEX_MODEL", "nvidia/nemotron-3.5-lightning-30b-a3b")
 NVIDIA_API_TIMEOUT = int(os.environ.get("GREAT_SAGE_NVIDIA_TIMEOUT", "120"))
+# Secret is intentionally supplied at runtime; never commit the key.
+NVIDIA_API_KEY_ENV = "GREAT_SAGE_NVIDIA_API_KEY"
 # Nemotron 3.5 Lightning: keep IA1/classification non-thinking and give IA2 a bounded reasoning budget.\nNVIDIA_FAST_REASONING_BUDGET = int(os.environ.get("GREAT_SAGE_NVIDIA_FAST_REASONING_BUDGET", "0"))\nNVIDIA_COMPLEX_REASONING_BUDGET = int(os.environ.get("GREAT_SAGE_NVIDIA_COMPLEX_REASONING_BUDGET", "8192"))
 LOCAL_ONLY = os.environ.get("GREAT_SAGE_LOCAL_ONLY", "false").lower() in {"1", "true", "yes", "on"}
 WEB_TOOLS_ENABLED = os.environ.get("GREAT_SAGE_WEB_TOOLS", "false").lower() in {"1", "true", "yes", "on"}
