@@ -1660,6 +1660,22 @@ body.desktop-raphael #desktop-task-panel.show {
    else. Anything that must survive gets .mini-keep. */
 body.mini > *:not(#canvas-wrap):not(.mini-keep) { display: none !important; }
 
+/* Raphael desktop overlay is a visual-only surface. Hide every legacy
+   window/panel/chat control explicitly so an old UI element cannot leak
+   through the mini-keep whitelist. The WebGL scene itself is untouched. */
+body.mini #win-controls,
+body.mini #win-drag,
+body.mini #panel-window-chrome,
+body.mini #panel-window-buttons,
+body.mini #chat-bar,
+body.mini #center-panel-overlay,
+body.mini #center-panel-close,
+body.mini #wheel-reveal,
+body.mini #wheel-outline,
+body.mini #wheel-menu {
+  display: none !important;
+}
+
 /* html carries its own colour (see the `html, body` rule at the top), so
    making only body transparent still leaves an opaque sheet behind the
    canvas. Both have to go for the desktop to show through. */
