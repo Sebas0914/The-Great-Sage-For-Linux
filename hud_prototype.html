@@ -1676,6 +1676,13 @@ body.mini #wheel-menu {
   display: none !important;
 }
 
+/* The caption box is intentionally kept for Spanish subtitles, but its
+   dismiss X is not part of the Raphael overlay UI. */
+body.mini #caption-box .caption-close-btn,
+body.desktop-raphael #caption-box .caption-close-btn {
+  display: none !important;
+}
+
 /* html carries its own colour (see the `html, body` rule at the top), so
    making only body transparent still leaves an opaque sheet behind the
    canvas. Both have to go for the desktop to show through. */
