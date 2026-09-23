@@ -1533,6 +1533,18 @@ body.mini #center-panel details > summary { font-size: 10.5px; }
 body.mini #mini-drag-handle { z-index: 70; }
 body.mini #mini-exit { z-index: 70; }
 
+/* The Wayland Raphael overlay is not the standalone panel window.
+   These controls belonged to older mini-window behavior and have no
+   working native action in this transparent overlay, so they must not
+   occupy the visual surface or steal input from Raphael. */
+body.mini #mini-drag-handle,
+body.mini #mini-exit,
+body.mini #mini-chat,
+body.mini #mini-chat-link,
+body.mini #desktop-task-panel {
+  display: none !important;
+}
+
 /* ---------------- DESKTOP RAPHAEL MODE ----------------
    Linux desktop mode keeps the WebGL canvas transparent and turns the
    existing mini scene into a compact, always-on-top Raphael presence.
