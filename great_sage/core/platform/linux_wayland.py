@@ -5,6 +5,7 @@ focused-window information. No global keyboard hooks are used on Wayland.
 """
 
 import asyncio
+import logging
 import os
 import subprocess
 import shutil
@@ -446,18 +447,29 @@ class PortalHotkey(Hotkey):
         await self._bind_shortcuts(bus, iface, Variant, self._session)
 
         def activated(session_handle, shortcut_id, timestamp, options):
-            if session_handle == self._session and shortcut_id == "activate":
-                if self.on_press:
+            if session_handle != self._session or shortcut_id != "activate":
+                return
+            log.info("Wayland global hotkey ACTIVATED: %s", self.binding)
+            if self.on_press:
+                try:
                     self.on_press()
+                except Exception:
+                    log.exception("Voice-key press callback failed")
 
         def deactivated(session_handle, shortcut_id, timestamp, options):
-            if session_handle == self._session and shortcut_id == "activate":
-                if self.on_release:
+            if session_handle != self._session or shortcut_id != "activate":
+                return
+            log.info("Wayland global hotkey DEACTIVATED: %s", self.binding)
+            if self.on_release:
+                try:
                     self.on_release()
+                except Exception:
+                    log.exception("Voice-key release callback failed")
 
         iface.on_activated(activated)
         iface.on_deactivated(deactivated)
         self.active = True
+        log.info("Wayland global hotkey ACTIVE: %s", self.binding)
         if self._ready_event:
             self._ready_event.set()
         try:
@@ -490,6 +502,7 @@ class PortalHotkey(Hotkey):
         except Exception as exc:
             self.active = False
             self._error = exc
+            log.exception("Wayland global hotkey worker failed for %s", self.binding)
             if self._ready_event:
                 self._ready_event.set()
 
@@ -509,8 +522,16 @@ class PortalHotkey(Hotkey):
                 "XDG GlobalShortcuts portal did not finish registering "
                 "within 10 seconds; it may be waiting for a desktop shortcut dialog."
             )
+            log.error("Wayland global hotkey registration timed out for %s", self.binding)
             return False
-        return self.active and self._error is None
+        ok = self.active and self._error is None
+        if not ok:
+            log.error(
+                "Wayland global hotkey registration FAILED for %s: %s",
+                self.binding,
+                self._error,
+            )
+        return ok
 
     def stop(self) -> None:
         self.active = False
