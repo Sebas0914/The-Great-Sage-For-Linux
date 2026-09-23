@@ -69,6 +69,8 @@ MINI_QUERY = "?mini=1&desktop=1" if os.name != "nt" else "?mini=1"
 EXIT_SENTINEL = "GS_EXIT_OVERLAY"
 HIDE_SENTINEL = "GS_HIDE_OVERLAY"
 OVERLAY_PID_FILE = "/tmp/great-sage-overlay.pid"
+OVERLAY_LOCK_FILE = "/tmp/great-sage-overlay.lock"
+_overlay_lock_handle = None
 
 # The page sets this once it has switched to overlay visuals. The
 # window stays HIDDEN until then: shown immediately, it displays the
@@ -447,6 +449,7 @@ class OverlayView(QWebEngineView):
                         if generation != self._input_mask_generation or self._dragging:
                             return
                         if not isinstance(rects, list):
+                            self._apply_wayland_input_regions([])
                             return
 
                         clean_rects = []
@@ -619,10 +622,14 @@ class OverlayView(QWebEngineView):
         if ok:
             # The LayerShell surface is fullscreen and fixed. Raphael's
             # position is controlled by the HTML scene, not by LayerShell.
+            # Start with an EMPTY input region: the page may not have its
+            # geometry ready yet, and an old/default region would otherwise
+            # swallow clicks across the entire desktop.
             print(
                 "[overlay] Wayland LayerShellQt overlay enabled",
                 flush=True,
             )
+            self._apply_wayland_input_regions([])
             self._update_input_mask()
 
         return ok
@@ -948,6 +955,42 @@ class OverlayView(QWebEngineView):
 # raises that window instead of stacking duplicates.
 _panel_procs = {}
 
+def _acquire_overlay_lock() -> bool:
+    """Allow only one Linux desktop overlay instance at a time."""
+    if os.name == "nt":
+        return True
+
+    import fcntl
+    global _overlay_lock_handle
+    try:
+        handle = open(OVERLAY_LOCK_FILE, "a+", encoding="utf-8")
+        try:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            handle.close()
+            print(
+                "[overlay] another overlay instance is already running; exiting",
+                flush=True,
+            )
+            return False
+        _overlay_lock_handle = handle
+        return True
+    except OSError as exc:
+        print(f"[overlay] could not acquire overlay lock: {exc}", flush=True)
+        return False
+
+def _release_overlay_lock() -> None:
+    if _overlay_lock_handle is None:
+        return
+    try:
+        import fcntl
+        fcntl.flock(_overlay_lock_handle.fileno(), fcntl.LOCK_UN)
+    except Exception:
+        pass
+    try:
+        _overlay_lock_handle.close()
+    except Exception:
+        pass
 
 def _panel_command(section: str):
     """How to re-invoke ourselves for a panel window.
@@ -1189,6 +1232,9 @@ def main() -> int:
         return app.exec()
 
     if os.name != "nt":
+        if not _acquire_overlay_lock():
+            return 0
+
         try:
             with open(OVERLAY_PID_FILE, "w", encoding="utf-8") as fh:
                 fh.write(str(os.getpid()))
@@ -1210,9 +1256,15 @@ def main() -> int:
                     view.hide()
         command_timer.timeout.connect(apply_command)
         command_timer.start(150)
-        app.aboutToQuit.connect(
-            lambda: os.path.exists(OVERLAY_PID_FILE) and os.unlink(OVERLAY_PID_FILE)
-        )
+        def _cleanup_overlay_state():
+            try:
+                if os.path.exists(OVERLAY_PID_FILE):
+                    os.unlink(OVERLAY_PID_FILE)
+            except OSError:
+                pass
+            _release_overlay_lock()
+
+        app.aboutToQuit.connect(_cleanup_overlay_state)
 
     view = OverlayView(args.size)
 
