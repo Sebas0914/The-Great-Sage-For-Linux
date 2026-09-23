@@ -4156,9 +4156,9 @@ Hey Ciel</textarea>
       color: 0xffffff,
       transparent: true,
       opacity: 0.75 + Math.random() * 0.25,
-      // These cubes sit in a transparent overlay. Do not let their
-      // semitransparent faces write depth for later transparent layers.
-      depthWrite: false
+      depthWrite: false,
+      depthTest: false,
+      blending: THREE.NormalBlending
     });
     const cube = new THREE.Mesh(geo, mat);
     const angle = (i / coreCubeCount) * Math.PI * 2;
@@ -4383,6 +4383,17 @@ Hey Ciel</textarea>
   // particle field survived into the overlay. Enforcing it last means
   // any future per-frame visibility write is overridden too, instead of
   // quietly reintroducing the bug.
+  // Mini visual isolation: hide DOM overlays while diagnosing the
+  // dark circular artifacts. The Three.js cube ring remains visible.
+  function isolateMiniDomVisuals() {
+    if (!miniMode) return;
+    ['wheel-reveal','wheel-outline','wheel-menu','caption-box','mini-chat',
+     'mini-exit','mini-drag-handle','desktop-task-panel'].forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) el.style.display = 'none';
+    });
+  }
+
   function enforceMiniVisibility() {
     for (let i = 0; i < worldGroup.children.length; i++) {
       const child = worldGroup.children[i];
@@ -7647,22 +7658,11 @@ const MINI_CHAT_PAD = 3;
     });
 
     if (miniMode) {
-      // Overlay mode renders the MODEL ONLY, onto nothing. The warp
-      // background and its composite pass are skipped entirely rather
-      // than faded out: they are what fills every pixel, so as long as
-      // either runs the canvas can never be see-through, however
-      // transparent the page around it is.
-      //
-      // fgComposite is built with transparent:true and its shader ends
-      // `gl_FragColor = vec4(col, base.a)`, so the model's own alpha
-      // survives to the canvas and the desktop shows through the gaps.
-      // Last word on visibility, after every animation routine has had
-      // its say this frame.
+      // Mini overlay: render only the explicitly whitelisted model groups.
+      // Keep the original floating cube ring, but force the mini scene to
+      // use an empty transparent canvas with no post-process background.
       enforceMiniVisibility();
-      // Diagnostic path: in mini mode render the model directly to the
-      // transparent canvas. This intentionally bypasses fgTarget + fgComposite
-      // so we can isolate whether the dark circles are introduced by the
-      // post-process/downsample pass rather than by the model materials.
+      isolateMiniDomVisuals();
       renderer.setRenderTarget(null);
       renderer.setClearColor(0x000000, 0);
       renderer.clear(true, true, true);
