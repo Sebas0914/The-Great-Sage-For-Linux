@@ -4153,7 +4153,12 @@ Hey Ciel</textarea>
     const size = 0.09 + Math.random() * 0.06;
     const geo = new THREE.BoxGeometry(size, size, size);
     const mat = new THREE.MeshBasicMaterial({
-      color: 0xffffff, transparent: true, opacity: 0.75 + Math.random() * 0.25
+      color: 0xffffff,
+      transparent: true,
+      opacity: 0.75 + Math.random() * 0.25,
+      // These cubes sit in a transparent overlay. Do not let their
+      // semitransparent faces write depth for later transparent layers.
+      depthWrite: false
     });
     const cube = new THREE.Mesh(geo, mat);
     const angle = (i / coreCubeCount) * Math.PI * 2;
