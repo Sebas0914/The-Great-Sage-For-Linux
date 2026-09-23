@@ -18,6 +18,8 @@ from platformdirs import user_data_dir
 
 from .base import AppLauncher, DataPaths, Hotkey, WindowInfo
 
+log = logging.getLogger(__name__)
+
 
 def _desktop_command(args):
     return subprocess.Popen(
@@ -540,8 +542,24 @@ class PortalHotkey(Hotkey):
         self._session = None
 
     def rebind(self, binding: str) -> bool:
+        binding = str(binding or "").strip()
+        if not binding:
+            self._error = ValueError("Push-to-talk binding is empty.")
+            log.error("Wayland global hotkey rebind rejected: empty binding")
+            return False
+        if binding.casefold() == self.binding.casefold() and self.active:
+            log.info("Wayland global hotkey unchanged: %s", self.binding)
+            return True
+        previous = self.binding
         self.stop()
         self.binding = binding
+        if self.start():
+            return True
+        log.warning(
+            "Wayland global hotkey rebind failed for %s; restoring %s",
+            binding, previous,
+        )
+        self.binding = previous
         return self.start()
 
 
