@@ -2496,7 +2496,7 @@ Hey Ciel</textarea>
   const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
   camera.position.set(0, 0, 10);
 
-  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, premultipliedAlpha: false });
   // Cap the render resolution. devicePixelRatio on a scaled 1440p display
   // is commonly 1.25-1.5, so rendering at it means up to 2.25x the pixels
   // of the window for a scene whose lines and glow look the same either
