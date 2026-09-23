@@ -1671,19 +1671,11 @@ body.mini #canvas-wrap {
    radius at low opacity reads as ambient light, while a tight bright one
    reads as neon, which is the "intense" look being avoided. */
 body.mini #canvas-wrap canvas {
-  /* The first two are TIGHT DARK outlines, and they are what makes the
-     overlay legible at all. The visuals are near-white lines, and a
-     transparent window sits on whatever the desktop happens to be - on a
-     light wallpaper (measured here: 240,240,240) white-on-white is
-     invisible, which reads as "the overlay is just a blank white box".
-     A 1px dark halo traces every line so it holds up on light and dark
-     desktops alike, the way a subtitle outline does.
-     Then the soft blue ambient glow, then the drop shadow that lifts the
-     whole thing off the desktop behind it. */
-  filter: drop-shadow(0 0 1px rgba(0, 20, 40, 0.85))
-          drop-shadow(0 0 2px rgba(0, 20, 40, 0.55))
-          drop-shadow(0 0 7px rgba(150, 200, 255, 0.30))
-          drop-shadow(0 3px 11px rgba(0, 0, 0, 0.50));
+  /* The overlay must stay truly transparent around Raphael. Dark
+     drop-shadows were being generated from every transparent/anti-aliased
+     foreground island, which can read as separate black circles/blobs on
+     the desktop instead of as a halo. Keep only the light ambient glow. */
+  filter: drop-shadow(0 0 7px rgba(150, 200, 255, 0.30));
 }
 
 /* ---- Overlay reply bubble ---- */
