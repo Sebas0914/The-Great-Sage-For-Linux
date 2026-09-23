@@ -1997,8 +1997,7 @@ body.mini:hover #mini-exit { opacity: 1; }
             <div id="chat-identity-name">UNIQUE SKILL: GREAT SAGE</div>
             <div id="chat-identity-model">
               <span id="chat-model-name">-</span><span id="chat-model-provider"></span><span id="chat-mode-badge"></span>
-            </div>
-            <button id="ai-settings-btn" type="button"
+            </div>            <button id="ai-settings-btn" type="button"
                     title="AI settings - API keys, providers, permissions">&#9881;</button>
             </div>
           </header>
@@ -3997,8 +3996,7 @@ Hey Ciel</textarea>
   // spin to everything in it. These are animated individually below so
   // they can precess independently.
   const orbitalBands = [];
-  BAND_CONFIGS.forEach((cfg) => {
-    const geo = makeBandGeometry(BAND_BASE);
+  BAND_CONFIGS.forEach((cfg) => {    const geo = makeBandGeometry(BAND_BASE);
     // Additive so the bands glow and read through one another where they
     // cross. That means they blend rather than strictly occlude - a
     // deliberate trade: depth-writing them would give hard occlusion but
@@ -4283,9 +4281,7 @@ Hey Ciel</textarea>
   // Whitelist rather than a hide-list: worldGroup gains children from
   // several loops (bands, shooters, drifting dots, stars), and a
   // hide-list would silently miss anything added later.
-  // The inner cube ring is part of the full HUD, but it is not part of the
-  // compact overlay. Keeping it here makes the wheel geometry inherit its
-  // radius calculations without drawing the 26 cube "balls" over the desktop.
+  // The inner cube ring is kept for the full HUD, but not rendered in the compact desktop overlay. Its radius is still used by the wheel layout.
   const MINI_KEEP = [coreGroup, haloGroup];
   let miniMode = false;
 
@@ -6000,7 +5996,6 @@ const MINI_CHAT_PAD = 3;
         finishFallback();
       });
     };
-
     const playThroughGraph = () => {
       voiceLineAudio.play().catch((err) => {
         console.warn('Reply audio playback rejected', err);
@@ -8001,7 +7996,6 @@ const MINI_CHAT_PAD = 3;
       }));
     });
   }
-
   // Draws the connectors outward from the hub. Called last in the
   // sequence, once the nodes it connects actually exist on screen.
   function revealWheelLinks() {
@@ -9001,3 +8995,935 @@ const MINI_CHAT_PAD = 3;
           if (isFinite(v)) SFX_GAIN[k] = Math.max(0, Math.min(2, v));
         });
         if (sfxPick && sfxGainSlider) {
+          sfxGainSlider.value = Math.round(currentGain(sfxPick.value) * 100);
+        }
+      } catch (err) { /* a corrupt blob must not stop the rest loading */ }
+    }
+    settingsSection.querySelectorAll('input').forEach((el) => {
+      if (isVoiceListInput(el)) return;
+      if (el.type === 'radio') {
+        if (saved[el.name] !== undefined) el.checked = (el.value === saved[el.name]);
+      } else if (el.id && saved[el.id] !== undefined) {
+        if (el.type === 'checkbox') el.checked = saved[el.id];
+        else el.value = saved[el.id];
+      }
+    });
+    settingsSection.querySelectorAll('input').forEach((el) => {
+      if (isVoiceListInput(el)) return;
+      el.dispatchEvent(new Event(el.type === 'checkbox' || el.type === 'radio' ? 'change' : 'input'));
+    });
+    if (saved['ptt-combo']) {
+      const pttBtn = document.getElementById('ptt-rebind-btn');
+      if (pttBtn) { pttBtn.dataset.combo = saved['ptt-combo']; pttBtn.textContent = comboLabel(saved['ptt-combo']); }
+    }
+    applyCaptionPosition(saved['caption-pos']);
+  }
+  let saveSettingsTimer = null;
+  function scheduleSaveSettings() {
+    clearTimeout(saveSettingsTimer);
+    saveSettingsTimer = setTimeout(() => {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'save_settings', settings: collectSettings() }));
+      }
+    }, 600);
+  }
+  settingsSection.addEventListener('input', (e) => { if (!isVoiceListInput(e.target)) scheduleSaveSettings(); });
+  settingsSection.addEventListener('change', (e) => { if (!isVoiceListInput(e.target)) scheduleSaveSettings(); });
+
+  // Explicit save button - everything above already auto-saves on
+  // change (debounced), but this skips the debounce delay and gives
+  // visible confirmation, for anyone who'd rather click something and
+  // see it worked than trust a silent auto-save.
+  const saveSettingsBtn = document.getElementById('save-settings-btn');
+  saveSettingsBtn.addEventListener('click', () => {
+    clearTimeout(saveSettingsTimer);
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'save_settings', settings: collectSettings() }));
+      saveSettingsBtn.textContent = 'SAVED';
+    } else {
+      saveSettingsBtn.textContent = 'NOT CONNECTED';
+    }
+    setTimeout(() => { saveSettingsBtn.textContent = 'SAVE SETTINGS'; }, 1500);
+  });
+
+  // ---------- Visual size sliders ----------
+  // Multipliers applied on top of each group's existing idle-breathing
+  // scale in the animate loop above - default 1 (slider at 100%) so
+  // behavior is unchanged until touched. Core, octagon and cube ring used
+  // to share ONE multiplier, so they could only ever be resized together;
+  // they're separate now.
+  let wireframeScaleMultiplier = 1;
+  let coreScaleMultiplier = 1;
+  let octagonScaleMultiplier = 1;
+  let cubeRingScaleMultiplier = 1;
+  // Below 1 by default so the expand-on-speak ring stays inside the
+  // viewport - see the note where it's applied in animate().
+  let outerRingScaleMultiplier = 0.78;
+  // How hard the rays bow as they approach the frame edge. 0 restores
+  // the old perfectly straight rays.
+  let edgeWarpCurve = 0.0;   // rays straight by default
+  let infallSpeedScale = 1.0;
+  let bandSpeedScale = 1.0;
+  // How much speech drives the flying particles. 0 = fully ambient (the
+  // default) - the field just drifts, ignoring the voice entirely.
+  // Higher makes them surge outward / rush inward while Great Sage
+  // speaks. Off by default because at full strength the field visibly
+  // slumps between words, which reads as the effect glitching rather
+  // than the core reacting.
+  let particleSpeechReact = 0.0;
+  let modelOpacityMultiplier = 1;
+
+  // Every material belonging to the model visuals, with the opacity it
+  // was authored at. Captured once so the global dial can scale each one
+  // from its OWN base rather than flattening them all to a single value,
+  // which would destroy the depth the varied per-cube opacities give.
+  const modelMaterials = [];
+  function collectModelMaterials() {
+    modelMaterials.length = 0;
+    worldGroup.traverse((obj) => {
+      const mats = Array.isArray(obj.material) ? obj.material : (obj.material ? [obj.material] : []);
+      mats.forEach((m) => {
+        if (!('opacity' in m)) return;
+        if (m.userData.baseOpacity === undefined) m.userData.baseOpacity = m.opacity;
+        modelMaterials.push(m);
+      });
+    });
+  }
+  function applyModelOpacity() {
+    modelMaterials.forEach((m) => {
+      m.opacity = m.userData.baseOpacity * modelOpacityMultiplier;
+      // A material authored fully opaque still needs the transparent
+      // flag once it's being faded, or the change simply won't render.
+      if (modelOpacityMultiplier < 1) m.transparent = true;
+    });
+  }
+  collectModelMaterials();
+
+  document.getElementById('outer-ring-scale-slider').addEventListener('input', (e) => {
+    outerRingScaleMultiplier = Number(e.target.value) / 100;
+  });
+  document.getElementById('edge-warp-curve-slider').addEventListener('input', (e) => {
+    edgeWarpCurve = Number(e.target.value) / 100;
+  });
+  document.getElementById('infall-count-slider').addEventListener('input', (e) => {
+    activeInfallCount = Number(e.target.value);
+  });
+  document.getElementById('infall-speed-slider').addEventListener('input', (e) => {
+    infallSpeedScale = Number(e.target.value) / 100;
+  });
+  document.getElementById('band-speed-slider').addEventListener('input', (e) => {
+    bandSpeedScale = Number(e.target.value) / 100;
+  });
+  document.getElementById('voice-line-set-select').addEventListener('change', (e) => {
+    const sel = e.target;
+    // Guarded the same way the voice picker is: a stray change event
+    // would otherwise swap the clip set and overwrite the saved choice.
+    if (sel.value === sel._activeSet) return;
+    sel._activeSet = sel.value;
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'set_voice_line_set', name: sel.value }));
+    }
+  });
+  document.getElementById('caption-sync-toggle').addEventListener('change', (e) => {
+    captionFollowsSpeech = e.target.checked;
+  });
+  document.getElementById('particle-speech-slider').addEventListener('input', (e) => {
+    particleSpeechReact = Number(e.target.value) / 100;
+  });
+  // These two drive shader uniforms rather than JS state, so they take
+  // effect on the next rendered frame with no rebuild.
+  document.getElementById('refract-slider').addEventListener('input', (e) => {
+    warpUniforms.uRefract.value = Number(e.target.value) / 100;
+  });
+  document.getElementById('rings-slider').addEventListener('input', (e) => {
+    warpUniforms.uRings.value = Number(e.target.value) / 100;
+  });
+  document.getElementById('model-opacity-slider').addEventListener('input', (e) => {
+    modelOpacityMultiplier = Number(e.target.value) / 100;
+    applyModelOpacity();
+  });
+  document.getElementById('wireframe-scale-slider').addEventListener('input', (e) => {
+    wireframeScaleMultiplier = Number(e.target.value) / 100;
+  });
+  document.getElementById('core-scale-slider').addEventListener('input', (e) => {
+    coreScaleMultiplier = Number(e.target.value) / 100;
+  });
+  document.getElementById('octagon-scale-slider').addEventListener('input', (e) => {
+    octagonScaleMultiplier = Number(e.target.value) / 100;
+  });
+  document.getElementById('cube-ring-scale-slider').addEventListener('input', (e) => {
+    cubeRingScaleMultiplier = Number(e.target.value) / 100;
+  });
+  document.getElementById('particle-count-slider').addEventListener('input', (e) => {
+    activeShooterCount = Number(e.target.value);
+  });
+  document.getElementById('corner-warp-slider').addEventListener('input', (e) => {
+    bgComposite.material.uniforms.uFisheye.value = Number(e.target.value) / 100;
+  });
+  document.getElementById('magic-circle-opacity-slider').addEventListener('input', (e) => {
+    magicCircleMat.uniforms.uStrength.value = Number(e.target.value) / 100;
+  });
+  document.getElementById('laser-opacity-slider').addEventListener('input', (e) => {
+    laserOpacity = Number(e.target.value) / 100;
+  });
+  document.getElementById('chroma-slider').addEventListener('input', (e) => {
+    bgComposite.material.uniforms.uChroma.value = Number(e.target.value) / 100;
+  });
+  document.getElementById('panel-darkness-slider').addEventListener('input', (e) => {
+    // Plain CSS variable rather than touching the rule directly, so the
+    // panel's own stylesheet stays the single source of truth for how
+    // that value is used.
+    document.documentElement.style.setProperty(
+      '--panel-darkness', String(Number(e.target.value) / 100)
+    );
+  });
+  document.getElementById('magic-circle-slider').addEventListener('input', (e) => {
+    const scale = Number(e.target.value) / 100;
+    // Hidden outright at 0 rather than just scaled to nothing, so it
+    // stops being drawn at all instead of collapsing into a bright speck
+    // behind the core.
+    magicCircle.visible = scale > 0;
+    magicCircle.scale.setScalar(scale);
+  });
+  let speakingPulseIntensity = 1;
+  document.getElementById('speaking-pulse-slider').addEventListener('input', (e) => {
+    speakingPulseIntensity = Number(e.target.value) / 100;
+  });
+  let speakingGlowIntensity = 2;
+  document.getElementById('speaking-glow-slider').addEventListener('input', (e) => {
+    speakingGlowIntensity = Number(e.target.value) / 100;
+  });
+
+  // Double-click any slider to snap it back to its default - dispatches a
+  // real 'input' event so whatever listener that slider already has
+  // fires normally, rather than duplicating each slider's own logic here.
+  function addResetOnDoubleClick(slider, defaultValue) {
+    slider.addEventListener('dblclick', () => {
+      slider.value = defaultValue;
+      slider.dispatchEvent(new Event('input'));
+    });
+  }
+  addResetOnDoubleClick(document.getElementById('volume-slider'), 80);
+  addResetOnDoubleClick(document.getElementById('caption-opacity-slider'), 100);
+  addResetOnDoubleClick(document.getElementById('cinematic-dim-slider'), 45);
+  addResetOnDoubleClick(document.getElementById('cinematic-height-slider'), 60);
+  addResetOnDoubleClick(document.getElementById('bar-caption-y-slider'), -100);
+  addResetOnDoubleClick(document.getElementById('wireframe-scale-slider'), 100);
+  addResetOnDoubleClick(document.getElementById('core-scale-slider'), 100);
+  addResetOnDoubleClick(document.getElementById('octagon-scale-slider'), 100);
+  addResetOnDoubleClick(document.getElementById('cube-ring-scale-slider'), 100);
+  addResetOnDoubleClick(document.getElementById('outer-ring-scale-slider'), 78);
+  addResetOnDoubleClick(document.getElementById('model-opacity-slider'), 100);
+  addResetOnDoubleClick(document.getElementById('edge-warp-curve-slider'), 0);
+  addResetOnDoubleClick(document.getElementById('infall-count-slider'), 240);
+  addResetOnDoubleClick(document.getElementById('infall-speed-slider'), 100);
+  addResetOnDoubleClick(document.getElementById('refract-slider'), 100);
+  addResetOnDoubleClick(document.getElementById('rings-slider'), 100);
+  addResetOnDoubleClick(document.getElementById('band-speed-slider'), 100);
+  addResetOnDoubleClick(document.getElementById('particle-speech-slider'), 0);
+  addResetOnDoubleClick(document.getElementById('particle-count-slider'), 185);
+  addResetOnDoubleClick(document.getElementById('corner-warp-slider'), 20);
+  addResetOnDoubleClick(document.getElementById('magic-circle-slider'), 70);
+  addResetOnDoubleClick(document.getElementById('magic-circle-opacity-slider'), 15);
+  addResetOnDoubleClick(document.getElementById('laser-opacity-slider'), 55);
+  addResetOnDoubleClick(document.getElementById('chroma-slider'), 100);
+  addResetOnDoubleClick(document.getElementById('panel-darkness-slider'), 60);
+  addResetOnDoubleClick(document.getElementById('speaking-pulse-slider'), 100);
+  addResetOnDoubleClick(document.getElementById('speaking-glow-slider'), 200);
+  addResetOnDoubleClick(bgHueSlider, 0);
+  addResetOnDoubleClick(ribbonScaleSlider, 100);
+  // Same double-click-to-reset pattern as the sliders above, works
+  // identically for <input type="color"> - just resets .value and
+  // dispatches 'input' so each picker's own listener re-applies it.
+  addResetOnDoubleClick(bgBaseColorPicker, '#175c99');
+  addResetOnDoubleClick(bgAccentColorPicker, '#806b2e');
+  addResetOnDoubleClick(colorPicker, '#ffffff');
+  addResetOnDoubleClick(document.getElementById('speaking-glow-slider'), 200);
+  addResetOnDoubleClick(visualPosXSlider, 0);
+  addResetOnDoubleClick(visualPosYSlider, 1);
+
+  // ---------- Conversation history panel ----------
+  // ChatGPT/Claude-style sidebar: each "topic" is its own saved
+  // transcript. Only the ACTIVE topic is actually still live with the
+  // AI (its ChatEngine history on the server) - clicking an older topic
+  // just re-displays what was said, the same way viewing an old
+  // conversation elsewhere doesn't resume it as the live one.
+  const historyList = document.getElementById('history-list');
+  const topicListEl = document.getElementById('topic-list');
+  const chatTopics = []; // [{ id, title, messages: [{role, text}] }]
+  let activeTopicId = null;
+
+  function ensureActiveTopic() {
+    if (chatTopics.some((t) => t.id === activeTopicId)) return;
+    const topic = { id: Date.now(), title: 'New chat', messages: [],
+                    created: Date.now(), updated: Date.now(), summary: '' };
+    chatTopics.push(topic);
+    activeTopicId = topic.id;
+  }
+  function currentTopic() {
+    return chatTopics.find((t) => t.id === activeTopicId);
+  }
+
+  // ---------- In-page dialogs ----------
+  // WebView2 does not reliably show window.confirm / prompt / alert. An
+  // embedded webview can suppress them and return false immediately,
+  // which is exactly how Delete behaved: nothing happened in the app,
+  // while the identical code deleted correctly in a browser. Rename had
+  // the same fault, silently.
+  //
+  // Promise-based, so the call sites read the way the blocking built-ins
+  // did, and styled to match Great Sage rather than the OS.
+  function gsDialog(opts) {
+    return new Promise((resolve) => {
+      const back = document.createElement('div');
+      back.id = 'gs-dialog-backdrop';
+      const box = document.createElement('div');
+      box.id = 'gs-dialog';
+      const msg = document.createElement('div');
+      msg.className = 'gs-dialog-msg';
+      msg.textContent = opts.message || '';
+      box.appendChild(msg);
+
+      let input = null;
+      if (opts.prompt) {
+        input = document.createElement('input');
+        input.type = 'text';
+        input.value = opts.value || '';
+        box.appendChild(input);
+      }
+
+      const actions = document.createElement('div');
+      actions.className = 'gs-dialog-actions';
+      const done = (val) => { back.remove(); resolve(val); };
+
+      if (opts.cancelLabel !== null) {
+        const cancel = document.createElement('button');
+        cancel.type = 'button';
+        cancel.textContent = opts.cancelLabel || 'CANCEL';
+        cancel.addEventListener('click', () => done(opts.prompt ? null : false));
+        actions.appendChild(cancel);
+      }
+      const ok = document.createElement('button');
+      ok.type = 'button';
+      ok.textContent = opts.okLabel || 'OK';
+      if (opts.danger) ok.className = 'danger';
+      ok.addEventListener('click',
+        () => done(opts.prompt ? (input ? input.value : '') : true));
+      actions.appendChild(ok);
+      box.appendChild(actions);
+
+      back.addEventListener('click', (e) => {
+        if (e.target === back) done(opts.prompt ? null : false);
+      });
+      back.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') ok.click();
+        if (e.key === 'Escape') done(opts.prompt ? null : false);
+      });
+      back.appendChild(box);
+      document.body.appendChild(back);
+      if (input) { input.focus(); input.select(); } else { ok.focus(); }
+    });
+  }
+  const gsConfirm = (message, okLabel) =>
+    gsDialog({ message, okLabel: okLabel || 'CONFIRM', danger: true });
+  const gsPrompt = (message, value) =>
+    gsDialog({ message, value, prompt: true, okLabel: 'SAVE' });
+  const gsNotice = (message) =>
+    gsDialog({ message, okLabel: 'CLOSE', cancelLabel: null });
+
+  // ---------- Chat workspace: transcript <-> memory ----------
+  // One backend, two views. Selecting Memory swaps what the main column
+  // shows; it does NOT load a second copy of anything - memoryFacts is
+  // the same list the server sends, and delete goes down the same path.
+  const chatViewEl = document.getElementById('chat-view');
+  const memoryViewEl = document.getElementById('memory-view');
+  const memoryNavBtn = document.getElementById('memory-nav-btn');
+  let showingMemory = false;
+
+  // Three panes share the main column now: the transcript, the memory
+  // list, and AI settings. Named rather than boolean, because "not
+  // memory" no longer means "the chat".
+  const aiSettingsViewEl = document.getElementById('ai-settings-view');
+  const aiSettingsBtn = document.getElementById('ai-settings-btn');
+  let workspaceView = 'chat';
+
+  function setChatWorkspaceView(view) {
+    workspaceView = (view === true) ? 'memory' : (view || 'chat');
+    showingMemory = workspaceView === 'memory';
+    if (chatViewEl) chatViewEl.hidden = workspaceView !== 'chat';
+    if (memoryViewEl) memoryViewEl.hidden = workspaceView !== 'memory';
+    if (aiSettingsViewEl) aiSettingsViewEl.hidden = workspaceView !== 'settings';
+    if (memoryNavBtn) memoryNavBtn.classList.toggle('active', showingMemory);
+    if (aiSettingsBtn)
+      aiSettingsBtn.classList.toggle('active', workspaceView === 'settings');
+    // Keep the message bar mounted while switching between transcript,
+    // memory, and settings. It is the primary way back to a conversation,
+    // and hiding it made the HUD look as if typed chat had disappeared.
+    const bar = document.getElementById('chat-bar');
+    if (bar) bar.hidden = false;
+    if (showingMemory) renderMemory();
+  }
+  if (memoryNavBtn) {
+    memoryNavBtn.addEventListener('click',
+      () => setChatWorkspaceView(showingMemory ? 'chat' : 'memory'));
+  }
+  if (aiSettingsBtn) {
+    aiSettingsBtn.addEventListener('click',
+      () => setChatWorkspaceView(workspaceView === 'settings' ? 'chat' : 'settings'));
+  }
+
+  // ---------- AI settings (API keys, providers, permissions) ----------
+  // The page never holds a real key it did not just receive from the
+  // user: the server sends MASKS, and a mask sent back is ignored rather
+  // than stored, so a saved key can be replaced but never read out.
+  const AI_KEY_FIELDS = { anthropic: 'ai-key-anthropic',
+                          openai: 'ai-key-openai',
+                          tts: 'ai-key-tts' };
+  function renderAiSettings(cfg) {
+    if (!cfg) return;
+    const fill = (id, list, value) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.innerHTML = '';
+      (list || []).forEach((name) => {
+        const o = document.createElement('option');
+        o.value = name; o.textContent = name;
+        el.appendChild(o);
+      });
+      if (value) el.value = value;
+    };
+    const modeSel = document.getElementById('ai-mode');
+    if (modeSel && cfg.modes) {
+      const same = modeSel.options.length === cfg.modes.length;
+      if (!same) {
+        modeSel.innerHTML = '';
+        cfg.modes.forEach((m) => {
+          const o = document.createElement('option');
+          o.value = m.name; o.textContent = m.label;
+          o.dataset.description = m.description || '';
+          modeSel.appendChild(o);
+        });
+      }
+      if (cfg.mode) modeSel.value = cfg.mode;
+      const hint = document.getElementById('ai-mode-hint');
+      const chosen = modeSel.selectedOptions[0];
+      if (hint && chosen) hint.textContent = chosen.dataset.description || '';
+      modeSel.onchange = () => {
+        const o = modeSel.selectedOptions[0];
+        if (hint && o) hint.textContent = o.dataset.description || '';
+      };
+    }
+    fill('ai-chat-provider', cfg.providers, cfg.chat_provider);
+    fill('ai-tts-provider', cfg.tts_providers, cfg.tts_provider);
+    Object.keys(AI_KEY_FIELDS).forEach((name) => {
+      const el = document.getElementById(AI_KEY_FIELDS[name]);
+      if (!el) return;
+      const masked = (cfg.keys || {})[name] || '';
+      el.value = masked;
+      el.placeholder = masked ? 'saved' : 'not set';
+    });
+    const web = document.getElementById('ai-allow-web');
+    const desk = document.getElementById('ai-allow-desktop');
+    const auto = document.getElementById('ai-auto-gaming');
+    if (web) web.checked = !!cfg.allow_web;
+    if (desk) desk.checked = !!cfg.allow_desktop;
+    if (auto) auto.checked = cfg.auto_gaming !== false;
+  }
+  const aiSaveBtn = document.getElementById('ai-set-save');
+  if (aiSaveBtn) {
+    aiSaveBtn.addEventListener('click', () => {
+      const keys = {};
+      Object.keys(AI_KEY_FIELDS).forEach((name) => {
+        const el = document.getElementById(AI_KEY_FIELDS[name]);
+        if (el && el.value) keys[name] = el.value;
+      });
+      const val = (id) => (document.getElementById(id) || {}).value;
+      const chk = (id) => !!(document.getElementById(id) || {}).checked;
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'save_ai_settings', settings: {
+          mode: val('ai-mode'),
+          chat_provider: val('ai-chat-provider'),
+          tts_provider: val('ai-tts-provider'),
+          allow_web: chk('ai-allow-web'),
+          allow_desktop: chk('ai-allow-desktop'),
+          auto_gaming: chk('ai-auto-gaming'),
+          keys,
+        }}));
+        const st = document.getElementById('ai-set-status');
+        if (st) st.textContent = 'saved';
+        setTimeout(() => { const e = document.getElementById('ai-set-status');
+                           if (e) e.textContent = ''; }, 2500);
+      }
+    });
+  }
+
+  // Identity header. The model name is filled in from the server so
+  // switching models never edits this file - and Great Sage's name stays
+  // the same whichever model is underneath.
+  function setChatIdentity(model, provider) {
+    const m = document.getElementById('chat-model-name');
+    const p = document.getElementById('chat-model-provider');
+    if (m) m.textContent = model || '-';
+    if (p) p.textContent = provider || '';
+  }
+
+  // ---------- Memory manager (spec S46) ----------
+  let memoryFacts = [];
+  const memoryListEl = document.getElementById('memory-list');
+  const memorySearchEl = document.getElementById('memory-search');
+  const memoryCountEl = document.getElementById('memory-count');
+
+  function renderMemory() {
+    if (!memoryListEl) return;
+    const q = (memorySearchEl && memorySearchEl.value || '').trim().toLowerCase();
+    const shown = q ? memoryFacts.filter((f) => f.toLowerCase().includes(q))
+                    : memoryFacts.slice();
+    memoryListEl.innerHTML = '';
+    if (!shown.length) {
+      const empty = document.createElement('div');
+      empty.className = 'empty';
+      empty.textContent = memoryFacts.length
+        ? '(nothing matches that search)'
+        : '(nothing remembered yet)';
+      memoryListEl.appendChild(empty);
+    } else {
+      shown.forEach((fact) => {
+        const row = document.createElement('div');
+        row.className = 'memory-item';
+        const text = document.createElement('div');
+        text.className = 'memory-item-text';
+        text.textContent = fact;
+        row.appendChild(text);
+        const del = document.createElement('button');
+        del.className = 'memory-del';
+        del.type = 'button';
+        del.textContent = 'x';
+        del.title = 'Forget this';
+        del.addEventListener('click', () => {
+          // No confirm for a single line: it is one fact, the list is
+          // right there, and a prompt per row would make tidying memory
+          // tedious. Clear all DOES confirm - that one is not recoverable.
+          if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: 'delete_memory', fact }));
+          }
+        });
+        row.appendChild(del);
+        memoryListEl.appendChild(row);
+      });
+    }
+    if (memoryCountEl) {
+      memoryCountEl.textContent = q
+        ? shown.length + ' of ' + memoryFacts.length + ' shown'
+        : memoryFacts.length + (memoryFacts.length === 1 ? ' memory' : ' memories');
+    }
+  }
+  if (memorySearchEl) memorySearchEl.addEventListener('input', renderMemory);
+  const memoryClearBtn = document.getElementById('memory-clear-btn');
+  if (memoryClearBtn) {
+    memoryClearBtn.addEventListener('click', async () => {
+      if (!memoryFacts.length) return;
+      const ok = await gsConfirm('Forget everything Great Sage has remembered?' +
+        String.fromCharCode(10) + String.fromCharCode(10) +
+        memoryFacts.length + ' memories will be deleted. This cannot be undone.', 'FORGET ALL');
+      if (!ok) return;
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'clear_memory' }));
+      }
+    });
+  }
+
+  // Ask the model to name a chat, ONCE, after its first exchange.
+  // Titles used to be the first 40 characters of the first message, so
+  // the sidebar filled with things like "could you check why the render"
+  // - unreadable at a glance and useless for finding anything later.
+  //
+  // Only once: a title that rewrites itself as the topic drifts makes
+  // the list move under the user, which is worse than a slightly stale
+  // name. `titled` marks it done and is saved with the chat, so a
+  // restart does not re-request titles for every conversation.
+  function maybeNameChat(topic) {
+    if (!topic || topic.titled) return;
+    const users = topic.messages.filter((m) => m.role === 'user').length;
+    const bots = topic.messages.filter((m) => m.role !== 'user').length;
+    if (users < 1 || bots < 1) return;
+    topic.titled = true;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    ws.send(JSON.stringify({ type: 'suggest_title', id: topic.id,
+                             messages: topic.messages.slice(0, 4) }));
+  }
+
+  // Push the whole list to the server, coalesced: a burst of edits (the
+  // message, the reply landing, a rename) becomes one write instead of
+  // three. See core/chat_store.py for why the whole list is sent.
+  let saveChatsTimer = null;
+  function saveChats() {
+    clearTimeout(saveChatsTimer);
+    saveChatsTimer = setTimeout(() => {
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      try {
+        ws.send(JSON.stringify({ type: 'save_chats', chats: chatTopics }));
+      } catch (err) { console.warn('could not save chats', err); }
+    }, 400);
+  }
+
+  // One floating menu reused by every row, closed on any outside click.
+  // Building a menu per row would leave dozens in the DOM, each with its
+  // own listeners, for a list that can grow to 200 chats.
+  let openMenuEl = null;
+  function closeTopicMenu() {
+    if (openMenuEl) { openMenuEl.remove(); openMenuEl = null; }
+  }
+  document.addEventListener('click', closeTopicMenu);
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeTopicMenu();
+  });
+
+  function openTopicMenu(topic, anchorEl) {
+    closeTopicMenu();
+    const menu = document.createElement('div');
+    menu.className = 'topic-menu';
+    menu.addEventListener('click', (e) => e.stopPropagation());
+
+    const item = (label, danger, fn) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'topic-menu-item' + (danger ? ' danger' : '');
+      b.textContent = label;
+      b.addEventListener('click', () => { closeTopicMenu(); fn(); });
+      menu.appendChild(b);
+    };
+
+    item('Rename', false, async () => {
+      const name = await gsPrompt('Rename this chat:', topic.title);
+      if (name === null) return;                 // cancelled
+      const clean = name.trim();
+      if (!clean) return;
+      topic.title = clean.slice(0, 120);
+      topic.renamed = true;        // a generated title must not overwrite this
+      topic.titled = true;
+      renderTopicList();
+      saveChats();
+    });
+
+    item('Summarize', false, () => requestChatAction('summarize_chat', topic));
+    item('Remember this chat', false,
+         () => requestChatAction('remember_chat', topic));
+
+    item('Delete', true, async () => {
+      // Spec S7: deletion needs a second confirmation.
+      const ok = await gsConfirm('Delete this conversation?' +
+        String.fromCharCode(10) + String.fromCharCode(10) + topic.title +
+        String.fromCharCode(10) + String.fromCharCode(10) +
+        'This cannot be undone.', 'DELETE');
+      if (!ok) return;
+      const wasActive = topic.id === activeTopicId;
+      chatTopics.splice(chatTopics.indexOf(topic), 1);
+      if (wasActive) {
+        // Deleting the live conversation clears the model's context too -
+        // there is nothing left for it to stay "active" against.
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: 'reset_chat' }));
+        }
+        activeTopicId = null;
+      }
+      renderTopicList();
+      renderHistory();
+      saveChats();
+    });
+
+    const r = anchorEl.getBoundingClientRect();
+    menu.style.left = Math.round(r.left - 120) + 'px';
+    menu.style.top = Math.round(r.bottom + 4) + 'px';
+    document.body.appendChild(menu);
+    openMenuEl = menu;
+  }
+
+  // Summarize / Remember both need the model, so they are server round
+  // trips. The server replies with chat_action_result.
+  function requestChatAction(kind, topic) {
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    ws.send(JSON.stringify({
+      type: kind, id: topic.id, title: topic.title,
+      messages: topic.messages,
+    }));
+  }
+
+  function renderTopicList() {
+    topicListEl.innerHTML = '';
+    chatTopics.slice().reverse().forEach((topic) => {
+      const div = document.createElement('div');
+      div.className = 'topic-item' + (topic.id === activeTopicId ? ' active' : '');
+      div.title = topic.title;
+
+      const label = document.createElement('span');
+      label.className = 'topic-item-label';
+      label.textContent = topic.title;
+      div.appendChild(label);
+
+      // Spec S7: a three-dot menu, NOT an X. An X sitting on every row
+      // is a one-click destructive action next to the row you click to
+      // SELECT a chat - the two are a pixel apart, and the failure mode
+      // is losing a conversation you meant to open.
+      const menuBtn = document.createElement('button');
+      menuBtn.className = 'topic-menu-btn';
+      menuBtn.type = 'button';
+      menuBtn.textContent = '\u22EF';          // midline horizontal ellipsis
+      menuBtn.title = 'Chat options';
+      menuBtn.addEventListener('click', (e) => {
+        e.stopPropagation();                  // don't also select the row
+        openTopicMenu(topic, menuBtn);
+      });
+      div.appendChild(menuBtn);
+
+      div.addEventListener('click', () => {
+        activeTopicId = topic.id;
+        setChatWorkspaceView(false);   // opening a chat leaves Memory
+        renderTopicList();
+        renderHistory();
+      });
+      topicListEl.appendChild(div);
+    });
+  }
+
+  // ---------- Action trail ----------
+  const TOOL_LABELS = {
+    get_time: 'checked the clock',
+    get_system_status: 'checked this machine',
+    list_running_apps: 'listed open applications',
+    get_focused_window: 'checked the focused window',
+    open_url: 'opened a link',
+    open_application: 'launched an application',
+    open_folder: 'opened a folder',
+    search_files: 'searched your files',
+    look_at_screen: 'looked at your screen',
+    web_search: 'searched the web',
+    web_fetch: 'read a web page',
+  };
+  function addActionEntry(name, result) {
+    const topic = currentTopic();
+    const entry = { role: 'action', tool: name,
+                    text: TOOL_LABELS[name] || name,
+                    result: String(result || '').slice(0, 600) };
+    if (topic) { topic.messages.push(entry); saveChats(); }
+    renderHistory();
+  }
+
+  function renderHistory() {
+    historyList.innerHTML = '';
+    const messages = currentTopic() ? currentTopic().messages : [];
+    if (!messages.length) {
+      historyList.innerHTML = '<div class="empty">(nothing yet - say something)</div>';
+      return;
+    }
+    messages.forEach((entry) => {
+      const div = document.createElement('div');
+      div.className = 'history-entry ' + entry.role;
+      if (entry.role === 'action') {
+        // Collapsed by default: the trail should be scannable, with the
+        // detail one click away rather than burying the conversation.
+        const head = document.createElement('button');
+        head.type = 'button';
+        head.className = 'action-head';
+        head.textContent = '> ' + entry.text;
+        const body = document.createElement('div');
+        body.className = 'action-body';
+        body.textContent = entry.result || '(no output)';
+        body.hidden = true;
+        head.addEventListener('click', () => { body.hidden = !body.hidden; });
+        div.appendChild(head);
+        div.appendChild(body);
+        historyList.appendChild(div);
+        return;
+      }
+      const roleLabel = document.createElement('span');
+      roleLabel.className = 'role-label';
+      roleLabel.textContent = entry.role === 'user' ? 'YOU' : 'GREAT SAGE';
+      const text = document.createElement('div');
+      text.textContent = entry.text;
+      div.appendChild(roleLabel);
+      // Pictures sent with this turn, shown in the transcript so the
+      // conversation still reads correctly later. These are the stored
+      // THUMBNAILS, not the full images that went to the model.
+      (entry.images || []).forEach((src) => {
+        const im = document.createElement('img');
+        im.src = src;
+        im.alt = 'attached image';
+        div.appendChild(im);
+      });
+      div.appendChild(text);
+      historyList.appendChild(div);
+    });
+    historyList.scrollTop = historyList.scrollHeight;
+  }
+
+  document.getElementById('new-chat-btn').addEventListener('click', () => {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'reset_chat' }));
+    }
+    const topic = { id: Date.now(), title: 'New chat', messages: [],
+                    created: Date.now(), updated: Date.now(), summary: '' };
+    chatTopics.push(topic);
+    activeTopicId = topic.id;
+    setChatWorkspaceView(false);     // starting a chat leaves Memory
+    renderTopicList();
+    renderHistory();
+    saveChats();
+  });
+
+  // Adds a brief "pressed" pulse (see .pressed keyframes in <style>) on
+  // mousedown, removed once the animation finishes - a clear, reusable
+  // hook point for a sound designer to later attach hover/click audio to
+  // the same events without touching this logic.
+  function addPressFeedback(el) {
+    el.addEventListener('mousedown', () => el.classList.add('pressed'));
+    el.addEventListener('animationend', (e) => {
+      if (e.target === el) el.classList.remove('pressed');
+    });
+  }
+  [
+    ...wheelItems,
+    document.getElementById('btn-speak'),
+    document.getElementById('btn-notice'),
+    document.getElementById('new-chat-btn'),
+    captionMoveBtn,
+  ].forEach(addPressFeedback);
+
+  let masterVolume = 0.8;
+  const volumeSlider = document.getElementById('volume-slider');
+  volumeSlider.addEventListener('input', () => {
+    masterVolume = Number(volumeSlider.value) / 100;
+    noticeSound.volume = masterVolume;
+    speechAudios.forEach((el) => { el.volume = masterVolume; });
+  });
+
+  const sfxToggle = document.getElementById('sfx-toggle');
+  // ---------- Per-sound levels ----------
+  // The master slider moves everything together; this is for when one
+  // clip sits wrong against the rest, which is a mixing job and belongs
+  // to Krazaa rather than to a number I picked in the source.
+  const SFX_LABELS = {
+    startup:       'Startup',
+    coreOpen:      'Core menu - open',
+    coreClose:     'Core menu - close',
+    uiHover:       'Core menu - hover',
+    uiClick:       'Core menu - click',
+    uiClick2:      'Core menu - click (2)',
+    panelOpen:     'Panel - open',
+    panelClose:    'Panel - close',
+    innerHover:    'Inner UI - hover',
+    innerClick:    'Inner UI - click',
+    overlayAppear: 'Overlay appears',
+    thinking:      'Thinking (loop)',
+  };
+  const sfxPick = document.getElementById('sfx-pick');
+  const sfxGainSlider = document.getElementById('sfx-gain');
+
+  function currentGain(name) {
+    const g = SFX_GAIN[name];
+    return (typeof g === 'number' && isFinite(g)) ? g : 1;
+  }
+  if (sfxPick) {
+    Object.keys(SFX_LABELS).forEach((name) => {
+      if (!SFX_FILES[name]) return;         // skip anything not shipped
+      const opt = document.createElement('option');
+      opt.value = name;
+      opt.textContent = SFX_LABELS[name];
+      sfxPick.appendChild(opt);
+    });
+    const syncSlider = () => {
+      if (!sfxGainSlider) return;
+      sfxGainSlider.value = Math.round(currentGain(sfxPick.value) * 100);
+    };
+    syncSlider();
+    sfxPick.addEventListener('change', syncSlider);
+  }
+  if (sfxGainSlider && sfxPick) {
+    sfxGainSlider.addEventListener('input', () => {
+      const name = sfxPick.value;
+      SFX_GAIN[name] = Math.max(0, Math.min(2,
+        (parseFloat(sfxGainSlider.value) || 0) / 100));
+      // The bed is already playing; follow it live rather than waiting
+      // for the next reply.
+      const bed = sfxPool['thinking'];
+      if (name === 'thinking' && bed && !bed.paused) {
+        try { bed.volume = Math.max(0, Math.min(1, sfxVolume * SFX_GAIN[name])); }
+        catch (err) { }
+      }
+      scheduleSaveSettings();
+    });
+    // On release, not on every pixel of the drag - otherwise it stutters
+    // over itself while the slider moves.
+    sfxGainSlider.addEventListener('change', () => {
+      if (sfxPick.value !== 'thinking') playSfx(sfxPick.value);
+    });
+  }
+
+  const uiSfxToggle = document.getElementById('ui-sfx-toggle');
+  const uiSfxVolume = document.getElementById('ui-sfx-volume');
+  if (uiSfxToggle) {
+    uiSfxToggle.addEventListener('change', () => {
+      sfxEnabled = uiSfxToggle.checked;
+      // Turning them off mid-reply has to silence the loop too, not just
+      // stop the next one from starting.
+      if (!sfxEnabled) setSfxThinking(false);
+      else if (aiThinking) setSfxThinking(true);
+    });
+  }
+  if (uiSfxVolume) {
+    uiSfxVolume.addEventListener('input', () => {
+      sfxVolume = Math.max(0, Math.min(1, (parseFloat(uiSfxVolume.value) || 0) / 100));
+      const bed = sfxPool['thinking'];
+      if (bed && !bed.paused) { try { bed.volume = sfxVolume; } catch (err) { } }
+    });
+  }
+
+  // ---------- Caption text: on/off + opacity (settings panel) ----------
+  let captionEnabled = true;
+  let captionOpacity = 1;
+  const captionToggle = document.getElementById('caption-toggle');
+  const captionOpacitySlider = document.getElementById('caption-opacity-slider');
+
+  captionToggle.addEventListener('change', () => {
+    captionEnabled = captionToggle.checked;
+    captionBox.classList.toggle('caption-disabled', !captionEnabled);
+    if (!captionEnabled) cinematicCaption.classList.remove('show');
+  });
+  captionOpacitySlider.addEventListener('input', () => {
+    captionOpacity = Number(captionOpacitySlider.value) / 100;
+    captionBox.style.setProperty('--caption-opacity', captionOpacity);
+    // Live-update if the box is already showing, not just on the next reveal.
+    if (captionBox.classList.contains('show')) {
+      captionBox.style.opacity = captionOpacity;
+    }
+  });
+  const cinematicDimSlider = document.getElementById('cinematic-dim-slider');
+  cinematicDimSlider.addEventListener('input', () => {
+    document.documentElement.style.setProperty('--cinematic-dim', Number(cinematicDimSlider.value) / 100);
+  });
+  const cinematicHeightSlider = document.getElementById('cinematic-height-slider');
+  cinematicHeightSlider.addEventListener('input', () => {
+    document.documentElement.style.setProperty('--cinematic-y-offset', cinematicHeightSlider.value + 'px');
+  });
+  const barCaptionYSlider = document.getElementById('bar-caption-y-slider');
+  barCaptionYSlider.addEventListener('input', () => {
+    document.documentElement.style.setProperty('--bar-caption-y-offset', barCaptionYSlider.value + 'px');
+  });
+
+  // Box vs cinematic (full-screen dimmed, huge centered typed-out text)
+  // caption style - "Show caption text" above still turns either off
+  // entirely regardless of which style is picked here.
+  document.querySelectorAll('input[name="caption-mode"]').forEach((radio) => {
+    radio.addEventListener('change', () => {
+      if (!radio.checked) return;
+      captionMode = radio.value;
+      captionBox.classList.remove('show');
+      cinematicCaption.classList.remove('show');
+      closeBarCaption();
+    });
+  });
+
+  animate();
+})();
+</script>
+</body>
+</html>
