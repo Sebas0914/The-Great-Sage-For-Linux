@@ -472,7 +472,15 @@ class OverlayView(QWebEngineView):
                             x2 = max(x1, min(float(w), x + rw))
                             y2 = max(y1, min(float(h), y + rh))
                             if x2 > x1 and y2 > y1:
-                                clean_rects.append((x1, y1, x2 - x1, y2 - y1))
+                                # ctypes.c_int arrays reject floats. JavaScript DOM geometry
+                # is fractional CSS pixels, so normalize to integer surface
+                # coordinates only at the native Wayland boundary.
+                ix = int(round(x1))
+                iy = int(round(y1))
+                iw = int(round(x2 - x1))
+                ih = int(round(y2 - y1))
+                if iw > 0 and ih > 0:
+                    clean_rects.append((ix, iy, iw, ih))
 
                         self._apply_wayland_input_regions(clean_rects)
 
