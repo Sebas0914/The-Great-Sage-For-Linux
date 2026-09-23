@@ -447,7 +447,10 @@ class _HudHostApi:
         # Only the overlay moves. The app keeps running on 3.14 with torch,
         # F5-TTS and the whole voice stack untouched - which is possible
         # only because the overlay is already a separate process.
-        venv_python = os.path.join(here, ".overlay-venv", "Scripts", "python.exe")
+        if os.name == "nt":
+            venv_python = os.path.join(here, ".overlay-venv", "Scripts", "python.exe")
+        else:
+            venv_python = os.path.join(here, ".overlay-venv", "bin", "python")
         interpreter = venv_python if os.path.exists(venv_python) else sys.executable
         if interpreter != sys.executable:
             log.info("Overlay will run under %s", venv_python)
@@ -460,9 +463,22 @@ class _HudHostApi:
         the app would be left with every window hidden and no way back.
         """
         proc.wait()
+        self._overlay_proc = None
+
+        # On Linux/Wayland the pywebview window is a hidden compatibility
+        # host. It must NEVER be restored when the real Qt overlay exits:
+        # doing so exposes the full HUD (including the chat bar) after an
+        # overlay crash or restart.
+        if os.name != "nt":
+            log.info(
+                "Linux overlay process exited (%s); keeping compatibility "
+                "host hidden",
+                proc.returncode,
+            )
+            return
+
         log.info("Overlay process exited (%s); restoring the main window",
                  proc.returncode)
-        self._overlay_proc = None
         try:
             self._window.show()
             self._focus_window()
@@ -544,12 +560,19 @@ class _HudHostApi:
                                      daemon=True).start()
                     log.info("Overlay process started (pid %s)",
                              self._overlay_proc.pid)
-                win.hide()
+                # On Linux the compatibility pywebview host is created
+                # with hidden=True, and set_overlay(True) runs before
+                # webview.start(). Calling hide() here asks pywebview to
+                # manipulate a window that has not started yet, raising
+                # "Main window failed to start". The host is already hidden.
+                if os.name == "nt":
+                    win.hide()
             else:
                 if self._overlay_proc is not None:
                     self._overlay_proc.terminate()
                     self._overlay_proc = None
-                win.show()
+                if os.name == "nt":
+                    win.show()
             return True
         except Exception:
             log.exception("set_overlay(%s) failed", on)
@@ -631,12 +654,21 @@ def main() -> int:
     _configure_logging()
     logging.getLogger(__name__).info("Starting Great Sage HUD")
 
-    provider = OllamaProvider(
+    fallback = OllamaProvider(
         host=settings.OLLAMA_HOST,
         model=settings.OLLAMA_DEFAULT_MODEL,
         timeout=settings.REQUEST_TIMEOUT_SECONDS,
         think=settings.OLLAMA_THINK,
     )
+    try:
+        from great_sage.core import ai_settings
+        config = ai_settings.load(settings.AI_SETTINGS_PATH)
+        provider, provider_label = ai_settings.build_provider(config, fallback)
+        logging.getLogger(__name__).info("Selected model provider: %s", provider_label)
+    except Exception as exc:
+        logging.getLogger(__name__).exception("Provider setup failed; using local fallback")
+        provider = fallback
+
     try:
         provider.get_available_models()
     except ModelProviderError as exc:
@@ -664,10 +696,57 @@ def main() -> int:
     # policy doesn't apply. This is our own window, not a web page, so
     # autoplay is exactly what we want. Must be set before webview.start()
     # creates the WebView2 environment, which reads it once.
-    os.environ.setdefault(
-        "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
-        "--autoplay-policy=no-user-gesture-required",
-    )
+    if os.name == "nt":
+        os.environ.setdefault(
+            "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
+            "--autoplay-policy=no-user-gesture-required",
+        )
+
+    # En Linux/Wayland NO creamos ningún host pywebview.
+    # El único elemento visual debe ser overlay_window.py, que usa
+    # LayerShellQt y por tanto se comporta como una capa del escritorio,
+    # no como una ventana normal de KDE.
+    if os.name != "nt":
+        import subprocess
+
+        here = os.path.dirname(os.path.abspath(__file__))
+        script = os.path.join(here, "overlay_window.py")
+
+        overlay_python = os.path.join(
+            here, ".overlay-venv", "bin", "python"
+        )
+        interpreter = (
+            overlay_python
+            if os.path.exists(overlay_python)
+            else sys.executable
+        )
+
+        cmd = [
+            interpreter,
+            script,
+            "--size",
+            str(OVERLAY_SIZE),
+        ]
+
+        log.info(
+            "Starting Linux overlay directly: %s",
+            " ".join(cmd),
+        )
+
+        proc = subprocess.Popen(
+            cmd,
+            cwd=here,
+        )
+
+        try:
+            return proc.wait()
+        except KeyboardInterrupt:
+            log.info("Stopping Linux overlay")
+            try:
+                proc.terminate()
+            except Exception:
+                pass
+            return 0
 
     html_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "hud_prototype.html")
     api = _HudHostApi()
@@ -686,23 +765,60 @@ def main() -> int:
     # With no frame there is nothing native to drag or close by, so the
     # page MUST provide both: #win-controls draws minimise/maximise/close
     # and #win-drag is the grab strip, all wired to _HudHostApi.
-    window = webview.create_window(
-        "Great Sage", html_path, width=1920, height=1080,
-        background_color="#030b08", js_api=api, transparent=True,
-        frameless=True,
-        # easy_drag defaults to TRUE for frameless windows, which makes the
-        # ENTIRE window a drag surface - press anywhere on the visual and it
-        # moves. Measured: a press in the dead centre moved the window by
-        # (151,79). The page defines its own drag region instead (the
-        # #win-drag strip, via app-region), so this must be off or it
-        # overrides that and there is no way to click anything.
-        easy_drag=False,
-        # Native sizing borders on all edges and corners. pywebview applies
-        # this at creation, unlike the WS_THICKFRAME bit set later, which
-        # never took effect because the WebView2 child window covers the
-        # whole client area and swallows the frame's hit-testing.
-        resizable=True,
-    )
+    # Windows can use the transparent/frameless host used by the original
+    # HUD. Linux webview backends do not share those Win32 window-style
+    # APIs, so start with a normal native window there. The HUD remains
+    # fully usable; advanced click-through overlay controls stay Windows-
+    # specific until a native Linux overlay host is implemented.
+    if os.name == "nt":
+        window_kwargs = {
+            "width": 1920,
+            "height": 1080,
+            "background_color": "#030b08",
+            "js_api": api,
+            "resizable": True,
+            "transparent": True,
+            "frameless": True,
+            "easy_drag": False,
+        }
+        window_url = html_path
+    else:
+        window_kwargs = {
+            "width": 1920,
+            "height": 1080,
+            "background_color": "#000000",
+            "js_api": api,
+            "resizable": False,
+            "transparent": True,
+            "frameless": True,
+            "focus": False,
+            "on_top": True,
+            "fullscreen": True,
+        }
+        window_url = html_path + "?desktop=1"
+    if os.name != "nt":
+        window_kwargs["hidden"] = True
+    # On Linux the visible Qt overlay must receive ?desktop=1. The hidden
+    # pywebview host must not load a second HUD client, otherwise both
+    # windows compete for the WebSocket/audio sink.
+    #
+    # IMPORTANT: do NOT use a data: URL here. pywebview classifies any
+    # non-http/file URL as a local URL and automatically starts its Bottle
+    # HTTP server. That created random 127.0.0.1 ports (for example 55847)
+    # for this hidden compatibility window. We only need an empty host,
+    # so use the html= argument instead.
+    if os.name != "nt":
+        window = webview.create_window(
+            "Great Sage",
+            html="<!doctype html><html><body></body></html>",
+            **window_kwargs,
+        )
+    else:
+        window = webview.create_window(
+            "Great Sage",
+            window_url,
+            **window_kwargs,
+        )
     api.attach(window)
 
     # Centre the window once the page is up.
@@ -716,17 +832,35 @@ def main() -> int:
     # _place() uses the monitor WORK AREA, so it also keeps clear of the
     # taskbar.
     def _centre_window():
-        hwnd = api._hwnd()
-        if hwnd:
-            api._place(hwnd, "centre")
-            # Restores edge/corner resizing that went away with the frame.
-            api.set_resizable(True)
-        api.fix_host_background()
+        if os.name == "nt":
+            hwnd = api._hwnd()
+            if hwnd:
+                api._place(hwnd, "centre")
+                # Restores edge/corner resizing that went away with the frame.
+                api.set_resizable(True)
+            api.fix_host_background()
+        else:
+            log.info("Linux HUD: using the native webview window host")
 
     try:
         window.events.loaded += _centre_window
     except Exception:
         log.exception("Could not hook the loaded event to centre the window")
+
+    if os.name != "nt":
+        def _keep_backend_when_closed(*_args):
+            try:
+                window.hide()
+            except Exception:
+                pass
+            return False
+        try:
+            window.events.closing += _keep_backend_when_closed
+        except Exception:
+            log.exception("Could not protect Linux HUD close event")
+        # The real visible surface is the separate Qt overlay. The pywebview
+        # window stays hidden as a compatibility/control host.
+        api.set_overlay(True)
     # Devtools OFF by default. debug=True enables WebView2's inspector,
     # which is why F12 or a stray right-click opened a developer window
     # mid-use - fine while building, wrong for anyone testing the app.

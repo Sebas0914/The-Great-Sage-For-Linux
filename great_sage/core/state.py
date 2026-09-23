@@ -111,6 +111,23 @@ class SageState:
             bits.append("Prefer the brief answer over the thorough one.")
         return " ".join(bits)
 
+    def visual_mood(self) -> str:
+        """Map behavioral state to a small set of visual HUD moods."""
+        self._decay()
+        e = self.values.get("engagement", 0.5)
+        c = self.values.get("confidence", 0.6)
+        q = self.values.get("curiosity", 0.4)
+        energy = self.values.get("energy", 0.7)
+        if energy < 0.32:
+            return "FOCUSED"
+        if c < 0.38:
+            return "CONFUSED"
+        if q > 0.68:
+            return "CURIOUS"
+        if e > 0.76 and c > 0.62:
+            return "HAPPY"
+        return "CALM"
+
     def snapshot(self):
         self._decay()
         return {k: round(v, 3) for k, v in self.values.items()}

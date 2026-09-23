@@ -1,3 +1,41 @@
+# Entornos virtuales
+.venv/
+.rvc-venv/
+venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Variables/secretos
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+logs/
+
+# Modelos grandes
+*.pth
+*.pt
+*.onnx
+*.safetensors
+
+# Builds
+build/
+dist/
+*.apk
+
+# IDE
+.vscode/
+.idea/
+
+# Sistema
+.DS_Store
+Thumbs.db
 # Byte-compiled Python
 __pycache__/
 *.pyc
@@ -83,3 +121,12 @@ ai_settings.json
 
 # Scheduled reminders and folder watches - personal.
 tasks.json
+
+# Local experimental/backup copies
+overlay_window.py.backup-*
+overlay_window.py.before-*
+overlay_window.py.wayland-backup
+overlay_window_pyqt6_test.py
+
+# Native build artifacts
+/native/layershell_bridge/build/

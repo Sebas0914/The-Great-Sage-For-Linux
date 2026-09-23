@@ -10,10 +10,15 @@
 #
 # NOT a Python dependency, and NOT bundleable: Ollama must be installed
 # separately and the model pulled once -
-#   https://ollama.com/download   then:  ollama pull qwen2.5:3b
+#   https://ollama.com/download   then:  ollama pull qwen3.5:4b
 
-# --- Model provider -----------------------------------------------------
+# --- Core / platform ---------------------------------------------------
 requests>=2.31
+platformdirs>=4.0
+# Wayland global shortcuts via XDG portal; no keyboard hook fallback.
+dbus-fast>=2.20
+# X11 fallback only; unused on Wayland.
+python-xlib>=0.33
 
 # --- HUD app (run_hud.py): native window + its WebSocket bridge ---------
 websockets>=12.0
@@ -88,3 +93,8 @@ faster-whisper>=1.0
 # The engine modules for all three are still in voice/ behind the
 # VOICE_ENGINE switch, and each imports its library lazily - so they cost
 # nothing until selected, and reinstating one is a pip install away.
+
+# --- Voice conversion: Raphael RVC v2 --------------------------------
+# RVC is installed into .rvc-venv by scripts/install_raphael_rvc_runtime.py.
+# It is intentionally NOT part of this Python 3.14 environment because
+# infer_rvc_python pins an older FAISS release that lacks a CPython 3.14 wheel.

@@ -73,6 +73,7 @@ def check_ollama_installed() -> Requirement:
         fix_url=OLLAMA_DOWNLOAD,
         fix_hint="Download and run the installer, then come back and re-check.",
         size_hint="~700 MB",
+        blocking=bool(getattr(settings, "LOCAL_ONLY", False)),
     )
 
 
@@ -91,8 +92,8 @@ def check_ollama_running() -> Requirement:
     return Requirement(
         key="ollama_running", label="Ollama service", ok=reachable, detail=detail,
         fix_command=["ollama", "serve"],
-        fix_hint="Ollama normally starts with Windows. Launch it once by hand "
-                 "if this stays red.",
+        fix_hint="Start Ollama only if a local provider is selected.",
+        blocking=bool(getattr(settings, "LOCAL_ONLY", False)),
     )
 
 
@@ -117,16 +118,21 @@ def check_model() -> Requirement:
         fix_command=["ollama", "pull", want],
         fix_hint="Downloads once, then works offline.",
         size_hint="~1.9 GB",
+        blocking=bool(getattr(settings, "LOCAL_ONLY", False)),
     )
 
 
 def check_webview2() -> Requirement:
-    """The runtime the HUD window renders through.
+    """WebView2 is a Windows-only prerequisite for the pywebview HUD.
 
-    Present on essentially every up-to-date Windows 11, but a fresh or
-    LTSC install can lack it, and without it the window never appears -
-    which looks like the app silently doing nothing.
+    Linux uses the system webview backend and must never launch the Windows
+    installer or treat WebView2 as a blocking prerequisite.
     """
+    if os.name != "nt":
+        return Requirement(
+            key="webview2", label="Microsoft WebView2 runtime",
+            ok=True, detail="Not required on Linux.", blocking=False,
+        )
     present, detail = False, "not detected"
     keys = [
         r"HKLM\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients"

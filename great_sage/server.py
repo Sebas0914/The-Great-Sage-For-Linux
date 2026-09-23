@@ -173,12 +173,19 @@ from great_sage.models.base import ModelProviderError
 from great_sage.voice.base import VoiceError
 from great_sage.voice.speakable import cap_for_speech, speakable
 from great_sage.voice.browser_sink import BrowserAudioSink
-from great_sage.voice.speech_input import PushToTalkRecorder, WakeWordListener
+from great_sage.voice.speech_input import (PushToTalkRecorder, WakeWordListener,
+                                             FollowUpListener)
 
 HOST = "localhost"
 PORT = 8765
 
 log = logging.getLogger(__name__)
+
+# Only one complete chat turn may run at a time.
+CHAT_TURN_LOCK = threading.Lock()
+
+# Prevent concurrent Great Sage replies from sharing one audio sink.
+VOICE_PLAYBACK_LOCK = threading.Lock()
 
 # Pre-routed tools that DO something rather than report something. When one
 # of these runs, the request has been carried out and the turn is finished
@@ -207,6 +214,12 @@ def _log_exceptions(fn, label):
             log.exception("%s failed", label)
     return run
 
+
+def _visual_mood(state) -> str:
+    try:
+        return state.visual_mood()
+    except Exception:
+        return "CALM"
 
 def _guard_protected() -> str:
     """The prompt PROSE a reply must never recite back, built once.
@@ -576,8 +589,77 @@ def _deep_review(provider, question, draft):
     return out
 
 
+def _translate_spoken_japanese(provider, text: str) -> str:
+    """Create the Japanese copy used ONLY by the spoken voice."""
+    value = (text or "").strip()
+    if not value:
+        return ""
+
+    def looks_japanese(value: str) -> bool:
+        # Hiragana, Katakana, or CJK ideographs.
+        # Use code points directly so the check cannot be confused
+        # by string escaping.
+        return any(
+            0x3040 <= ord(ch) <= 0x30FF
+            or 0x3400 <= ord(ch) <= 0x4DBF
+            or 0x4E00 <= ord(ch) <= 0x9FFF
+            for ch in value
+        )
+
+    def translate(instruction: str) -> str:
+        out = provider.send_message([
+            {
+                "role": "system",
+                "content": (
+                    "You are Great Sage's Japanese speech-localization "
+                    "component. ALWAYS output natural spoken Japanese. "
+                    "Never answer in English or Spanish. Preserve names, "
+                    "numbers, commands, code, and technical identifiers "
+                    "when they should remain unchanged. Output only the "
+                    "translation, with no explanation."
+                ),
+            },
+            {
+                "role": "user",
+                "content": instruction + "\n\nREPLY:\n" + value,
+            },
+        ])
+        return (out or "").strip()
+
+    try:
+        translated = translate(
+            "Translate this reply into natural Japanese for Raphael to speak."
+        )
+
+        # If the first attempt is clearly not Japanese, force a second pass.
+        if len(value) > 5 and not looks_japanese(translated):
+            translated = translate(
+                "IMPORTANT: The previous result was not Japanese. "
+                "Translate again. The output MUST contain Japanese text."
+            )
+
+        if translated:
+            if len(value) > 5 and not looks_japanese(translated):
+                log.error(
+                    "Japanese speech translation returned non-Japanese text; "
+                    "speech for this turn will be skipped."
+                )
+                return ""
+            log.info(
+                "Japanese speech text ready: %s",
+                translated[:120].replace("\\n", " ")
+            )
+            return translated
+
+    except Exception:
+        log.exception("Japanese speech translation failed")
+
+    return ""
+
+
 def _handle_chat(text, engine, voice, sink, websocket, loop,
-                 think=False) -> None:
+                 think=False, conversational_follow_up=False,
+                 follow_up_listener=None) -> None:
     """Runs in its own thread so the async server loop stays free to
     receive the "audio_ended" acks that unblock voice.speak() below.
 
@@ -608,6 +690,7 @@ def _handle_chat(text, engine, voice, sink, websocket, loop,
                            "actually,")):
             sage_state.on_correction(st)
         engine.state_hint = st.reply_hint()
+        send({"type": "mood", "mood": _visual_mood(st)})
 
     # Explicit "remember this" / "forget that" is acted on BEFORE the
     # model is called, so the fact is already stored when recall runs for
@@ -634,6 +717,7 @@ def _handle_chat(text, engine, voice, sink, websocket, loop,
     # result still dropped the ends of sentences. One clip has no seams.
     streaming_speech = (
         not getattr(settings, "VOICE_SINGLE_SHOT", True)
+        and not getattr(settings, "VOICE_SPEAK_JAPANESE", True)
         and voice is not None
         and hasattr(voice, "speak_stream")
         and voice.current_sink is sink
@@ -644,7 +728,10 @@ def _handle_chat(text, engine, voice, sink, websocket, loop,
 
     def speak_worker():
         try:
-            voice.speak_stream(iter(text_q.get, None), timer=timer)
+            # The voice engine and BrowserAudioSink are shared by all chat
+            # threads. Only one reply may own them at a time.
+            with VOICE_PLAYBACK_LOCK:
+                voice.speak_stream(iter(text_q.get, None), timer=timer)
         except BaseException as exc:  # re-raised on this thread below
             speech_error.append(exc)
 
@@ -784,6 +871,7 @@ def _handle_chat(text, engine, voice, sink, websocket, loop,
             engine.replace_last_reply(guarded)
         if st is not None:
             sage_state.on_reply(st, guarded, bool(used_tools))
+            send({"type": "mood", "mood": _visual_mood(st)})
             log.debug("State: %s", st.snapshot())
         # `text` carries the FINAL reply so the HUD's transcript records what
         # was actually delivered, not the discarded draft it streamed.
@@ -799,6 +887,11 @@ def _handle_chat(text, engine, voice, sink, websocket, loop,
         return
 
     try:
+        # Spanish subtitles are derived from the exact Japanese text
+        # that will be spoken, so the visible subtitle and Raphael's voice
+        # represent the same content.
+        subtitle_worker = None
+
         if speaker is not None:
             end_stream()
             if speech_error:
@@ -825,7 +918,34 @@ def _handle_chat(text, engine, voice, sink, websocket, loop,
             # its formatting while the ear is spared. Smaller models need
             # this - qwen2.5:3b leaked markdown on 3/3 list-inviting
             # prompts, and hardening the prompt only reached 1/3.
-            voice.speak(cap_for_speech(speakable("".join(reply_chunks))))
+            spoken_reply = _translate_spoken_japanese(
+                engine.provider, guarded
+            )
+            if spoken_reply:
+                subtitle_worker = threading.Thread(
+                    target=lambda: (
+                        send({
+                            "type": "subtitle_text",
+                            "text": _translate_subtitles(
+                                engine.provider,
+                                spoken_reply,
+                            ),
+                        })
+                    ),
+                    daemon=True,
+                    name="spanish-subtitles",
+                )
+                subtitle_worker.start()
+
+                with VOICE_PLAYBACK_LOCK:
+                    voice.speak(
+                        cap_for_speech(speakable(spoken_reply))
+                    )
+            else:
+                log.warning(
+                    "Skipping spoken audio because no valid Japanese "
+                    "translation was produced."
+                )
     except VoiceError as exc:
         log.exception("Voice/audio error speaking reply to %r", text)
         try:
@@ -835,6 +955,19 @@ def _handle_chat(text, engine, voice, sink, websocket, loop,
     except websockets.exceptions.ConnectionClosed:
         log.warning("Connection closed while sending audio for reply to %r", text)
     finally:
+        # Wait for the Spanish subtitle before marking the turn complete.
+        # This prevents speaking_done from racing subtitle_text and lets the
+        # HUD keep the Spanish subtitle as the authoritative caption.
+        if subtitle_worker is not None:
+            subtitle_worker.join()
+        if conversational_follow_up and voice is not None and follow_up_listener is not None:
+            try:
+                follow_up_listener.start()
+                log.info("Conversational follow-up listening armed for %.1fs",
+                         follow_up_listener.LISTEN_WINDOW_S)
+            except Exception:
+                log.exception("Could not arm conversational follow-up listener")
+
         timer.finish()
         try:
             send({"type": "speaking_done"})
@@ -842,8 +975,35 @@ def _handle_chat(text, engine, voice, sink, websocket, loop,
             pass
 
 
+def _translate_subtitles(provider, text: str) -> str:
+    """Translate the delivered reply to Spanish for HUD subtitles only.
+
+    This never changes the spoken text or the model's conversation history.
+    It is deliberately a separate, instruction-only provider call so the
+    language shown on screen can differ from Raphael's spoken language.
+    """
+    value = (text or "").strip()
+    if not value:
+        return ""
+    prompt = (
+        "Translate the following Great Sage reply into natural, concise Spanish "
+        "for on-screen subtitles. Preserve names, numbers, code, and technical "
+        "meaning. Do not add, omit, explain, or answer anything. Return ONLY "
+        "the Spanish translation, with no quotes and no preamble.\n\n"
+        "REPLY:\n" + value
+    )
+    try:
+        translated = provider.send_message([{"role": "user", "content": prompt}])
+    except Exception:
+        log.exception("Spanish subtitle translation failed")
+        return value
+    translated = (translated or "").strip()
+    return translated or value
+
+
 def _start_chat_thread(text, engine, voice, sink, websocket, loop,
-                       think=False) -> None:
+                       think=False, conversational_follow_up=False,
+                       follow_up_listener=None) -> None:
     """Shared by the "chat" message handler and both voice-input paths
     (push-to-talk, wake-word) below - same background-thread dispatch
     either way, so a voice-originated message goes through the exact same
@@ -854,10 +1014,22 @@ def _start_chat_thread(text, engine, voice, sink, websocket, loop,
     # out would leave no trace anywhere, exactly as the STT failure did.
     # _handle_chat guards its own body, but anything raised before that
     # try block would still escape.
+    def run_chat_turn():
+        with CHAT_TURN_LOCK:
+            _handle_chat(
+                text,
+                engine,
+                voice,
+                sink,
+                websocket,
+                loop,
+                think=think,
+                conversational_follow_up=conversational_follow_up,
+                follow_up_listener=follow_up_listener,
+            )
+
     threading.Thread(
-        target=_log_exceptions(_handle_chat, "chat reply"),
-        args=(text, engine, voice, sink, websocket, loop),
-        kwargs={"think": think},
+        target=_log_exceptions(run_chat_turn, "chat reply"),
         daemon=True,
     ).start()
 
@@ -959,7 +1131,9 @@ async def run_server(engine, voice) -> None:
             return
         if voice is not None:
             voice.set_sink(sink)
-        _start_chat_thread(text, engine, voice, sink, ws, loop)
+        _start_chat_thread(text, engine, voice, sink, ws, loop,
+                       conversational_follow_up=True,
+                       follow_up_listener=follow_up_listener)
 
     def _send_ptt_state(listening: bool) -> None:
         """Tell the page whether the mic is open.
@@ -1037,6 +1211,17 @@ async def run_server(engine, voice) -> None:
     engine.state_hint = ""
 
     ptt_recorder = PushToTalkRecorder(on_result=_route_voice_text, on_level=_send_mic_level)
+
+    # After a spoken turn, Raphael briefly keeps the microphone open
+    # for a natural follow-up ("sí", "abre VS Code", "ayúdame con eso", etc.).
+    # It is a bounded conversational window, not an always-on microphone.
+    follow_up_listener = FollowUpListener(on_result=lambda text: _route_follow_up(text))
+
+    def _route_follow_up(text: str) -> None:
+        follow_up_listener.stop()
+        _route_voice_text(text)
+
+    follow_up_listener._on_result = _route_follow_up
 
     # The global hotkey drives the SAME recorder the button does, so a
     # voice message started from another window goes down the identical
@@ -1141,35 +1326,37 @@ async def run_server(engine, voice) -> None:
             # the next launch - live rebinding worked, which hid it.
             combo = (saved.get("hud") or {}).get("ptt-combo")
             if isinstance(combo, str) and combo.strip():
-                return combo.strip()
+                combo = combo.strip()
+                # Older development builds could persist Ctrl+1 even though
+                # the HUD's intended Linux default is Alt+1. Migrate only
+                # that known legacy value so an old saved file cannot disable
+                # the PTT after an update.
+                if combo.casefold() == "ctrl+1":
+                    combo = "alt+1"
+                    saved.setdefault("hud", {})["ptt-combo"] = combo
+                    hud_settings.save(settings.HUD_SETTINGS_PATH, saved)
+                    log.info("Migrated legacy PTT binding ctrl+1 -> alt+1")
+                return combo
         except Exception:
             log.exception("Could not read the push-to-talk key")
         return getattr(settings, "GLOBAL_HOTKEY", "ctrl+alt+s")
 
     _hotkey = None
+    _platform = None
     if getattr(settings, "GLOBAL_HOTKEY", ""):
         try:
-            from great_sage.core.global_hotkey import GlobalHotkey
-            def _on_hotkey_active(active):
-                # The key was claimed on a retry, after start() had already
-                # reported failure. Correct the panel, which is otherwise
-                # left saying the key could not be registered for ever.
-                ws_c = active_connection["websocket"]
-                if ws_c is None or _hotkey is None:
-                    return
-                try:
-                    asyncio.run_coroutine_threadsafe(
-                        ws_c.send(json.dumps({
-                            "type": "hotkey_status",
-                            "binding": _hotkey.binding,
-                            "active": bool(active),
-                        })), loop)
-                except Exception:
-                    pass
-
-            _hotkey = GlobalHotkey(_ptt_binding(), _hotkey_press,
-                                   _hotkey_release, _on_hotkey_active)
-            _hotkey.start()
+            from great_sage.core.platform.factory import get_platform
+            _platform = get_platform(
+                _ptt_binding(), _hotkey_press, _hotkey_release
+            )
+            _hotkey = _platform.hotkey
+            if not _hotkey.start():
+                detail = getattr(_hotkey, "_error", None)
+                log.error(
+                    "Global hotkey unavailable for %s%s",
+                    _ptt_binding(),
+                    f": {detail}" if detail else "",
+                )
         except Exception:
             log.exception("Global hotkey unavailable")
 
@@ -1702,3 +1889,25 @@ async def run_server(engine, voice) -> None:
     async with websockets.serve(handler, HOST, PORT, max_size=16 * 1024 * 1024):
         log.info("WebSocket bridge listening on ws://%s:%s", HOST, PORT)
         await asyncio.Future()  # run until the process exits
+
+
+
+def main() -> int:
+    """Build the configured Great Sage runtime and keep the HUD bridge alive."""
+    from main import build_memory_callback, build_provider, build_system_prompt, build_voice
+    from great_sage.core.chat_engine import ChatEngine
+
+    provider = build_provider()
+    voice = build_voice(provider)
+    engine = ChatEngine(
+        provider,
+        build_system_prompt(),
+        idle_reset_seconds=settings.SESSION_IDLE_RESET_MINUTES * 60,
+        on_session_boundary=build_memory_callback(provider),
+    )
+    asyncio.run(run_server(engine, voice))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

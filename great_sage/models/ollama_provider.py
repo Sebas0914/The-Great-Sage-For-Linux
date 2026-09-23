@@ -7,11 +7,14 @@ knows or cares that it's Ollama specifically.
 """
 
 import json
+import logging
 from typing import Iterator, List
 
 import requests
 
 from great_sage.models.base import Message, ModelProvider, ModelProviderError
+
+log = logging.getLogger(__name__)
 
 
 class OllamaProvider(ModelProvider):
@@ -209,7 +212,7 @@ class OllamaProvider(ModelProvider):
             log.warning("Could not unload %s from VRAM", self.model)
             return False
 
-    def chat_raw(self, messages, tools=None):
+    def chat_raw(self, messages, tools=None, response_format=None):
         """One /api/chat round trip, returning Ollama's whole `message`.
 
         send_message() returns only the text, which is enough for
@@ -220,6 +223,8 @@ class OllamaProvider(ModelProvider):
         body = self._payload(messages, stream=False)
         if tools:
             body["tools"] = tools
+        if response_format and response_format.get("type") == "json_object":
+            body["format"] = "json"
         try:
             response = requests.post(f"{self.host}/api/chat", json=body,
                                      timeout=self.timeout)

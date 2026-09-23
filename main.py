@@ -23,14 +23,21 @@ from great_sage.voice.base import VoiceError
 
 
 def build_provider():
-    if settings.ACTIVE_PROVIDER == "ollama":
-        return OllamaProvider(
-            host=settings.OLLAMA_HOST,
-            model=settings.OLLAMA_DEFAULT_MODEL,
-            timeout=settings.REQUEST_TIMEOUT_SECONDS,
-            think=settings.OLLAMA_THINK,
-        )
-    raise ValueError(f"Unknown provider: {settings.ACTIVE_PROVIDER}")
+    """Build the configured provider, preferring NVIDIA with local fallback."""
+    fallback = OllamaProvider(
+        host=settings.OLLAMA_HOST,
+        model=settings.OLLAMA_DEFAULT_MODEL,
+        timeout=settings.REQUEST_TIMEOUT_SECONDS,
+        think=settings.OLLAMA_THINK,
+    )
+    try:
+        from great_sage.core import ai_settings
+        config = ai_settings.load(settings.AI_SETTINGS_PATH)
+        provider, _label = ai_settings.build_provider(config, fallback)
+        return provider
+    except Exception as exc:
+        print(f"[Provider] Falling back to local provider: {exc}")
+        return fallback
 
 
 def format_persona_phrases() -> str:
@@ -233,6 +240,9 @@ def build_voice_lines(set_name=None):
     through to live TTS, exactly as a disabled line does, so a partial
     set is a valid choice rather than a broken one.
     """
+    if not getattr(settings, "VOICE_PRE_RECORDED_ENABLED", True):
+        return []
+
     sets = getattr(settings, "VOICE_LINE_SETS", None)
     if sets:
         name = set_name or active_voice_line_set()
@@ -340,20 +350,21 @@ def build_voice(provider: ModelProvider):
 def main() -> int:
     provider = build_provider()
 
-    # Fail fast and clearly if Ollama isn't reachable, instead of letting
-    # the user discover it on their first chat message.
+    # Validate the selected backend. NVIDIA is the default, so Ollama
+    # must not block startup unless the user explicitly selected local mode.
     try:
         available = provider.get_available_models()
     except ModelProviderError as exc:
         print(f"[Startup error] {exc}")
         return 1
 
-    if available and settings.OLLAMA_DEFAULT_MODEL not in available:
-        print(
-            f"[Warning] '{settings.OLLAMA_DEFAULT_MODEL}' was not found in "
-            f"Ollama's pulled models: {', '.join(available)}"
-        )
-        print(f"Try: ollama pull {settings.OLLAMA_DEFAULT_MODEL}\n")
+    if available and settings.ACTIVE_PROVIDER == "ollama":
+        if settings.OLLAMA_DEFAULT_MODEL not in available:
+            print(
+                f"[Warning] '{settings.OLLAMA_DEFAULT_MODEL}' was not found in "
+                f"Ollama's pulled models: {', '.join(available)}"
+            )
+            print(f"Try: ollama pull {settings.OLLAMA_DEFAULT_MODEL}\\n")
 
     voice = build_voice(provider)
     engine = ChatEngine(

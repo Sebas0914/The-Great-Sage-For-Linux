@@ -7,8 +7,7 @@ actually doing all share:
   COMPANION  the default. Everything on.
   WORK       everything on; the assistant is expected to stay quiet.
   GAMING     unload the model, drop the HUD frame rate, stop listening.
-             This is the mode that matters - it hands back the ~4GB the
-             model holds and the GPU time the HUD was spending.
+             This is the mode that matters - it hands back model memory and GPU time that would otherwise be occupied.
   CODING     everything on, longer answers tolerated.
   SLEEP      unload the model, minimum frame rate, no listening.
   PRIVATE    local model only, no web, whatever else is on.

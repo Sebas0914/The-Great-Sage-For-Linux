@@ -98,6 +98,89 @@ class PushToTalkRecorder:
             self._on_result(text)
 
 
+class FollowUpListener:
+    """Short conversational listening window after Raphael finishes speaking."""
+    VOICE_THRESHOLD = 0.02
+    SILENCE_HANG_MS = 700
+    MAX_UTTERANCE_S = 10
+    LISTEN_WINDOW_S = 8
+    BLOCK_MS = 30
+
+    def __init__(self, on_result):
+        self._on_result = on_result
+        self._running = False
+        self._deadline = 0.0
+        self._thread = None
+        self.device = None
+        self._lock = threading.Lock()
+
+    @property
+    def running(self) -> bool:
+        return self._running
+
+    def start(self) -> None:
+        import time
+        with self._lock:
+            self._deadline = time.monotonic() + self.LISTEN_WINDOW_S
+            if self._running:
+                return
+            self._running = True
+            self._thread = threading.Thread(
+                target=self._run, daemon=True, name="great-sage-follow-up"
+            )
+            self._thread.start()
+
+    def stop(self) -> None:
+        self._running = False
+
+    def _run(self) -> None:
+        import time
+        q = queue.Queue()
+        def callback(indata, frames, time_info, status):
+            q.put(indata[:, 0].copy())
+        blocksize = int(SAMPLE_RATE * self.BLOCK_MS / 1000)
+        try:
+            with sd.InputStream(
+                samplerate=SAMPLE_RATE, channels=1, dtype="float32",
+                blocksize=blocksize, device=self.device, callback=callback,
+            ):
+                buffer = []
+                silence_ms = 0
+                recording = False
+                while self._running and time.monotonic() < self._deadline:
+                    try:
+                        block = q.get(timeout=0.25)
+                    except queue.Empty:
+                        continue
+                    level = float(np.sqrt(np.mean(np.square(block)))) if block.size else 0.0
+                    if level > self.VOICE_THRESHOLD:
+                        recording = True
+                        silence_ms = 0
+                        buffer.append(block)
+                    elif recording:
+                        silence_ms += self.BLOCK_MS
+                        buffer.append(block)
+                        total_s = sum(len(b) for b in buffer) / SAMPLE_RATE
+                        if silence_ms >= self.SILENCE_HANG_MS or total_s >= self.MAX_UTTERANCE_S:
+                            audio = np.concatenate(buffer)
+                            buffer = []
+                            recording = False
+                            silence_ms = 0
+                            self._handle_utterance(audio)
+                            self._deadline = time.monotonic() + self.LISTEN_WINDOW_S
+        except Exception:
+            log.exception("Follow-up listener stopped by an error")
+        finally:
+            self._running = False
+
+    def _handle_utterance(self, audio: np.ndarray) -> None:
+        if audio.size < SAMPLE_RATE * MIN_UTTERANCE_S:
+            return
+        text = transcribe(audio)
+        if text:
+            self._on_result(text)
+
+
 class WakeWordListener:
     """Runs its own background thread once started; stop() ends it.
     get_trigger_phrases is called fresh each utterance (not cached at

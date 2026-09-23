@@ -66,7 +66,7 @@
   "delay_feedback": 0.02,
   "pitch_semitones": 0,
   "voice_gain_db": -22,
-  "raphael_amount": 0.36,
+  "raphael_amount": 0.0,
   "eq_low_hz": 303,
   "eq_low_db": 1,
   "eq_lowmid_hz": 1492,
