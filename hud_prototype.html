@@ -4281,8 +4281,8 @@ Hey Ciel</textarea>
   // Whitelist rather than a hide-list: worldGroup gains children from
   // several loops (bands, shooters, drifting dots, stars), and a
   // hide-list would silently miss anything added later.
-  // The inner cube ring is kept for the full HUD, but not rendered in the compact desktop overlay. Its radius is still used by the wheel layout.
-  const MINI_KEEP = [coreGroup, haloGroup];
+  // The compact overlay keeps the original floating cube ring around the core.
+  const MINI_KEEP = [coreGroup, haloGroup, cubeRingGroup];
   let miniMode = false;
 
   // World units per screen pixel at the octagon's depth, so the ring
