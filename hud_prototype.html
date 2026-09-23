@@ -555,7 +555,7 @@
      clip-path growing, no directional split. */
   #wheel-reveal {
     position: fixed; inset: 0;
-    background: #000000;
+    background: transparent;
     clip-path: circle(0px at var(--wheel-x, 50%) var(--wheel-y, 50%));
     transition: clip-path 600ms cubic-bezier(0.2, 0.8, 0.2, 1);
     pointer-events: none;
@@ -620,7 +620,7 @@
        what made the buttons look off-centre in their cradles. */
     box-sizing: border-box;
     border-radius: 50%;
-    background: #000000;
+    background: transparent;
     /* Border width scales with the rest of the menu. Fixed at 2px it
        stayed the same weight while the circle shrank, so at the
        overlay's 0.55 scale it read as roughly twice as heavy - the
@@ -635,7 +635,7 @@
     clip-path: inset(0 0 0 0);
   }
   .wheel-item:hover .wheel-item-half {
-    background: #1a1a1a;
+    background: transparent;
     box-shadow: 0 0 16px rgba(255,255,255,0.6);
   }
   /* Draws back slightly under the cursor, so the button recedes while
