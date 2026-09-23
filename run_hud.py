@@ -463,9 +463,22 @@ class _HudHostApi:
         the app would be left with every window hidden and no way back.
         """
         proc.wait()
+        self._overlay_proc = None
+
+        # On Linux/Wayland the pywebview window is a hidden compatibility
+        # host. It must NEVER be restored when the real Qt overlay exits:
+        # doing so exposes the full HUD (including the chat bar) after an
+        # overlay crash or restart.
+        if os.name != "nt":
+            log.info(
+                "Linux overlay process exited (%s); keeping compatibility "
+                "host hidden",
+                proc.returncode,
+            )
+            return
+
         log.info("Overlay process exited (%s); restoring the main window",
                  proc.returncode)
-        self._overlay_proc = None
         try:
             self._window.show()
             self._focus_window()
