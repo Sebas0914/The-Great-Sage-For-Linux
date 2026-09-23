@@ -7654,15 +7654,14 @@ const MINI_CHAT_PAD = 3;
       // Last word on visibility, after every animation routine has had
       // its say this frame.
       enforceMiniVisibility();
-      renderer.setRenderTarget(fgTarget);
+      // Diagnostic path: in mini mode render the model directly to the
+      // transparent canvas. This intentionally bypasses fgTarget + fgComposite
+      // so we can isolate whether the dark circles are introduced by the
+      // post-process/downsample pass rather than by the model materials.
+      renderer.setRenderTarget(null);
       renderer.setClearColor(0x000000, 0);
       renderer.clear(true, true, true);
       renderer.render(scene, camera);
-
-      renderer.setRenderTarget(null);
-      renderer.setClearColor(0x000000, 0);
-      renderer.clear();
-      renderer.render(fgComposite.scene, warpCamera);
       return;
     }
 
