@@ -869,7 +869,25 @@ def main() -> int:
     debug = os.environ.get("GREAT_SAGE_DEBUG", "").strip() not in ("", "0")
     if debug:
         log.info("Devtools enabled (GREAT_SAGE_DEBUG is set)")
-    webview.start(debug=debug)
+    # pywebview documents that hidden=True creates the window hidden,
+    # but the GUI loop is where windows are actually materialized. On the
+    # Linux compatibility-host path we enforce the hidden state once the
+    # GUI loop is alive as well. Otherwise the old pywebview surface can
+    # briefly/incorrectly appear underneath the transparent Raphael overlay,
+    # which is exactly where its legacy close/minimize buttons and chat bar
+    # come from.
+    def _hide_linux_compat_host(host_window):
+        if os.name != "nt":
+            try:
+                host_window.hide()
+                log.info("Linux compatibility host hidden after GUI startup")
+            except Exception:
+                log.exception("Could not hide Linux compatibility host")
+
+    if os.name != "nt":
+        webview.start(_hide_linux_compat_host, window, debug=debug)
+    else:
+        webview.start(debug=debug)
     return 0
 
 
