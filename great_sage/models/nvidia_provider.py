@@ -9,11 +9,14 @@ or a local NIM base such as:
 """
 
 import json
+import logging
 from typing import Iterator, List
 
 import requests
 
 from great_sage.models.base import Message, ModelProvider, ModelProviderError
+
+log = logging.getLogger(__name__)
 
 
 class NvidiaProvider(ModelProvider):
@@ -255,7 +258,13 @@ class NvidiaRoutingProvider(ModelProvider):
         provider = self._select(args[0])
         try:
             return getattr(provider, method)(*args, **kwargs)
-        except ModelProviderError:
+        except ModelProviderError as exc:
+            log.warning(
+                "NVIDIA %s route failed (model=%s): %s; using local fallback",
+                self.last_route,
+                provider.model,
+                exc,
+            )
             if self.fallback is None:
                 raise
             self.last_provider = "local-fallback"
@@ -271,7 +280,13 @@ class NvidiaRoutingProvider(ModelProvider):
             for piece in provider.stream_response(messages):
                 emitted = True
                 yield piece
-        except ModelProviderError:
+        except ModelProviderError as exc:
+            log.warning(
+                "NVIDIA %s streaming route failed (model=%s): %s; using local fallback",
+                self.last_route,
+                provider.model,
+                exc,
+            )
             if self.fallback is None or emitted:
                 raise
             self.last_provider = "local-fallback"
