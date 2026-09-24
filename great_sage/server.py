@@ -937,25 +937,33 @@ def _handle_chat(text, engine, voice, sink, websocket, loop,
             # Japanese; subtitles are translated independently to Spanish.
             # Neither translation is fed into the other.
             original_reply = guarded
+
+            # Translation branches are independent and start at the same
+            # time from the original reply. Use the fast route for both
+            # localization tasks so a long/code-heavy reply cannot promote
+            # a simple translation into the complex model route.
+            translation_provider = getattr(
+                engine.provider, "fast", engine.provider
+            )
+            subtitle_worker = threading.Thread(
+                target=lambda: (
+                    send({
+                        "type": "subtitle_text",
+                        "text": _translate_subtitles(
+                            translation_provider,
+                            original_reply,
+                        ),
+                    })
+                ),
+                daemon=True,
+                name="spanish-subtitles",
+            )
+            subtitle_worker.start()
+
             spoken_reply = _translate_spoken_japanese(
-                engine.provider, original_reply
+                translation_provider, original_reply
             )
             if spoken_reply:
-                subtitle_worker = threading.Thread(
-                    target=lambda: (
-                        send({
-                            "type": "subtitle_text",
-                            "text": _translate_subtitles(
-                                engine.provider,
-                                original_reply,
-                            ),
-                        })
-                    ),
-                    daemon=True,
-                    name="spanish-subtitles",
-                )
-                subtitle_worker.start()
-
                 with VOICE_PLAYBACK_LOCK:
                     voice.speak(
                         cap_for_speech(speakable(spoken_reply))
