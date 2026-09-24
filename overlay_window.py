@@ -240,23 +240,13 @@ class OverlayView(QWebEngineView):
         self.setAttribute(Qt.WA_NoSystemBackground, True)
         self.setAttribute(Qt.WA_OpaquePaintEvent, False)
 
-        # En Wayland usamos una superficie transparente de pantalla completa.
-        # La región de entrada real se limita posteriormente a Raphael.
-        if WAYLAND_SESSION:
-            screen = QGuiApplication.primaryScreen()
-            if screen is not None:
-                screen_geo = screen.geometry()
-                self.setGeometry(screen_geo)
-                effective_size = min(
-                    screen_geo.width(),
-                    screen_geo.height(),
-                )
-            else:
-                self.resize(size, size)
-                effective_size = size
-        else:
-            self.resize(size, size)
-            effective_size = size
+        # En Wayland la superficie LayerShell debe ser SOLO del tamaño del
+        # overlay. Una superficie fullscreen puede hacer que QWebEngine/Chromium
+        # pinte el fondo transparente como negro y bloquee todo el escritorio.
+        # El compositor mantiene esta superficie por encima de las ventanas
+        # normales; Raphael sigue siendo el contenido de este cuadrado.
+        self.resize(size, size)
+        effective_size = size
 
         self._filtered = None
         self._wayland_layer = False
