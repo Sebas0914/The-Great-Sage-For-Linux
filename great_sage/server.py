@@ -995,12 +995,11 @@ def _handle_chat(text, engine, voice, sink, websocket, loop,
 
 
 def _translate_subtitles(provider, text: str) -> str:
-    """Translate the delivered Japanese speech text into Spanish subtitles.
+    """Localize the original assistant response into Spanish subtitles.
 
-    The subtitle language is intentionally independent from Raphael's spoken
-    language. Validate the model result before displaying it: if Japanese
-    characters remain, retry with a stricter Spanish-only instruction rather
-    than silently putting Japanese on screen.
+    This branch is independent from Raphael's Japanese speech translation.
+    The input is always the original assistant response, so subtitles do not
+    depend on, or get translated from, the Japanese voice text.
     """
     value = _strip_reasoning(text)
     if not value:
@@ -1036,7 +1035,9 @@ def _translate_subtitles(provider, text: str) -> str:
 
     try:
         translated = translate(
-            "Translate this Japanese speech text into natural Spanish."
+            "Translate this original assistant response into natural Spanish "
+            "for on-screen subtitles. If the text is already Spanish, keep "
+            "its meaning and make only natural subtitle-localization changes."
         )
 
         if translated and looks_japanese(translated):
