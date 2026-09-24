@@ -5847,16 +5847,16 @@ const MINI_CHAT_PAD = 3;
   function setDesktopSubtitleSource(text) {
     if (!DESKTOP_RAPHAEL_MODE) return;
     desktopSubtitleSource = String(text || '').trim();
-    desktopSubtitleShown = desktopSubtitleSource;
+    desktopSubtitleShown = '';
     desktopSubtitleQueue = '';
     const box = document.getElementById('caption-box');
-    // Desktop Raphael subtitles are authoritative and must not be disabled
-    // by the normal HUD caption toggle. That toggle can persist a
-    // "caption-disabled" class from an earlier mode, which otherwise makes
-    // the subtitle silently disappear even though subtitle_text arrived.
-    if (box) box.classList.remove('caption-disabled');
-    if (desktopSubtitleSource) {
-      showDesktopSubtitle(desktopSubtitleSource);
+    // subtitle_text is only the Spanish subtitle payload. Do NOT show the
+    // box here: Raphael's Japanese audio may still be being generated.
+    // Visibility is driven by the first audio clip and ends at speaking_done,
+    // so the subtitle stays synchronized with actual speech.
+    if (box) {
+      box.classList.remove('caption-disabled');
+      box.classList.remove('show');
     }
   }
 
@@ -5866,13 +5866,13 @@ const MINI_CHAT_PAD = 3;
       clearInterval(desktopSubtitleTimer);
       desktopSubtitleTimer = null;
     }
-    desktopSubtitleShown = desktopSubtitleSource;
+    // speaking_done is emitted only after the server has finished the voice
+    // playback. Hide the subtitle at that same boundary instead of leaving
+    // an empty gray box on screen.
+    desktopSubtitleShown = '';
     desktopSubtitleQueue = '';
-    if (desktopSubtitleShown) showDesktopSubtitle(desktopSubtitleShown);
-    setTimeout(() => {
-      const box = document.getElementById('caption-box');
-      if (box && !speechInProgress) box.classList.remove('show');
-    }, 900);
+    const box = document.getElementById('caption-box');
+    if (box) box.classList.remove('show');
   }
 
   let currentServerAudioUrl = null;
@@ -6034,9 +6034,11 @@ const MINI_CHAT_PAD = 3;
       }
     } else if (msg.type === 'audio') {
       if (DESKTOP_RAPHAEL_MODE && spanishSubtitleActive) {
-        if (desktopSubtitleSource) {
-        showDesktopSubtitle(desktopSubtitleSource);
-      }
+        // The first real audio clip marks the exact beginning of Raphael's
+        // speech. Only now reveal the already-buffered Spanish subtitle.
+        if (desktopSubtitleSource && !captionBox.classList.contains('show')) {
+          showDesktopSubtitle(desktopSubtitleSource);
+        }
         if (!desktopSpeechPulseSeen) {
           desktopSpeechPulseSeen = true;
           triggerDesktopPresence('SPEAKING', 1.055);
