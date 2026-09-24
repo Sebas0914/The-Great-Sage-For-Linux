@@ -932,8 +932,13 @@ def _handle_chat(text, engine, voice, sink, websocket, loop,
             # its formatting while the ear is spared. Smaller models need
             # this - qwen2.5:3b leaked markdown on 3/3 list-inviting
             # prompts, and hardening the prompt only reached 1/3.
+            # Keep both output branches anchored to the same original
+            # assistant response. Voice is translated independently to
+            # Japanese; subtitles are translated independently to Spanish.
+            # Neither translation is fed into the other.
+            original_reply = guarded
             spoken_reply = _translate_spoken_japanese(
-                engine.provider, guarded
+                engine.provider, original_reply
             )
             if spoken_reply:
                 subtitle_worker = threading.Thread(
@@ -942,7 +947,7 @@ def _handle_chat(text, engine, voice, sink, websocket, loop,
                             "type": "subtitle_text",
                             "text": _translate_subtitles(
                                 engine.provider,
-                                spoken_reply,
+                                original_reply,
                             ),
                         })
                     ),
