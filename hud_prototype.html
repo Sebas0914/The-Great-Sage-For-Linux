@@ -84,8 +84,9 @@
   body.desktop-raphael #caption-box.dragging { cursor: grabbing; }
   body.desktop-raphael #caption-box .caption-close-btn { display: none; }
   body.desktop-raphael #caption-text {
-    max-height: 30vh;
-    overflow-y: auto;
+    height: calc(5 * 1.3em + 2px);
+    max-height: calc(5 * 1.3em + 2px);
+    overflow: hidden;
     overflow-x: hidden;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
@@ -5832,6 +5833,40 @@ const MINI_CHAT_PAD = 3;
   let desktopSubtitleQueue = '';
   let desktopSubtitleTimer = null;
   let desktopSubtitleHideTimer = null;
+  let desktopSubtitleHideDelayTimer = null;
+
+  // Raphael subtitles are text-only: remove emoji/symbol presentation so
+  // the Spanish caption stays clean and predictable.
+  function cleanDesktopSubtitleText(text) {
+    return String(text || '')
+      .replace(/[\\u{1F000}-\\u{1FAFF}\\u{2600}-\\u{27BF}\\u{FE0F}\\u{200D}]/gu, '')
+      .replace(/[ \\t]{2,}/g, ' ')
+      .replace(/ *\\n */g, '\\n')
+      .trim();
+  }
+
+  // Keep the DOM to a five-line rolling window. The source remains complete
+  // for timing, while older visual lines leave through the top as new lines
+  // arrive at the bottom.
+  function renderDesktopSubtitleWindow(text) {
+    const el = document.getElementById('caption-text');
+    if (!el) return;
+    el.textContent = text;
+    el.scrollTop = el.scrollHeight;
+  }
+
+  function showDesktopSubtitle(text) {
+    if (!text) return;
+    const el = document.getElementById('caption-text');
+    const box = document.getElementById('caption-box');
+    if (!el || !box) return;
+    box.classList.remove('caption-disabled');
+    box.classList.add('show');
+    box.style.setProperty('opacity', '1', 'important');
+    box.style.setProperty('visibility', 'visible', 'important');
+    renderDesktopSubtitleWindow(text);
+    if (DESKTOP_RAPHAEL_MODE) setDesktopTarget(desktopTarget.x, desktopTarget.y);
+  }
 
   function startDesktopSubtitleTyping(durationSeconds) {
     if (!DESKTOP_RAPHAEL_MODE || desktopSubtitleTimer || !desktopSubtitleSource) return;
@@ -5841,23 +5876,27 @@ const MINI_CHAT_PAD = 3;
     const startedAt = performance.now();
     desktopSubtitleShown = '';
     desktopSubtitleQueue = source;
+
     const tick = () => {
       const elapsed = (performance.now() - startedAt) / 1000;
       const progress = Math.min(1, elapsed / duration);
       const count = Math.min(source.length, Math.max(0, Math.ceil(source.length * progress)));
+
       if (count !== desktopSubtitleShown.length) {
         desktopSubtitleShown = source.slice(0, count);
         desktopSubtitleQueue = source.slice(count);
         showDesktopSubtitle(desktopSubtitleShown);
       }
+
       if (progress >= 1 || count >= source.length) {
         desktopSubtitleShown = source;
         desktopSubtitleQueue = '';
-        showDesktopSubtitle(desktopSubtitleShown);
+        showDesktopSubtitle(source);
         clearInterval(desktopSubtitleTimer);
         desktopSubtitleTimer = null;
       }
     };
+
     desktopSubtitleTimer = setInterval(tick, 30);
     tick();
   }
@@ -5868,21 +5907,27 @@ const MINI_CHAT_PAD = 3;
       clearInterval(desktopSubtitleHideTimer);
       desktopSubtitleHideTimer = null;
     }
-    desktopSubtitleSource = String(text || '').trim();
+    if (desktopSubtitleHideDelayTimer) {
+      clearTimeout(desktopSubtitleHideDelayTimer);
+      desktopSubtitleHideDelayTimer = null;
+    }
+
+    desktopSubtitleSource = cleanDesktopSubtitleText(text);
     desktopSubtitleShown = '';
     desktopSubtitleQueue = '';
     const box = document.getElementById('caption-box');
-    // subtitle_text is only the Spanish subtitle payload. Do NOT show the
-    // box here: Raphael's Japanese audio may still be being generated.
-    // The box and typing animation start from the actual audio "play" event.
-    if (box) {
-      box.classList.remove('caption-disabled');
-      box.classList.remove('show');
+    const el = document.getElementById('caption-text');
+
+    if (box) box.classList.remove('show');
+    if (el) {
+      el.textContent = '';
+      el.scrollTop = 0;
     }
   }
 
   function finishDesktopSubtitle() {
     if (!DESKTOP_RAPHAEL_MODE) return;
+
     if (desktopSubtitleTimer) {
       clearInterval(desktopSubtitleTimer);
       desktopSubtitleTimer = null;
@@ -5891,35 +5936,39 @@ const MINI_CHAT_PAD = 3;
       clearInterval(desktopSubtitleHideTimer);
       desktopSubtitleHideTimer = null;
     }
+    if (desktopSubtitleHideDelayTimer) {
+      clearTimeout(desktopSubtitleHideDelayTimer);
+      desktopSubtitleHideDelayTimer = null;
+    }
 
     const box = document.getElementById('caption-box');
-    const startText = desktopSubtitleShown || '';
-    desktopSubtitleQueue = '';
-
-    // Mirror the entrance animation: Raphael's Spanish subtitle is removed
-    // character-by-character after speaking_done, then the box disappears.
-    // This keeps the subtitle lifecycle visually symmetric with the typing-in.
-    if (!box || !box.classList.contains('show') || !startText) {
+    if (!box || !box.classList.contains('show') || !desktopSubtitleShown) {
       desktopSubtitleShown = '';
       desktopSubtitleQueue = '';
+      desktopSubtitleSource = '';
       if (box) box.classList.remove('show');
       return;
     }
 
-    desktopSubtitleHideTimer = setInterval(() => {
-      if (!desktopSubtitleShown.length) {
-        clearInterval(desktopSubtitleHideTimer);
-        desktopSubtitleHideTimer = null;
-        desktopSubtitleQueue = '';
-        desktopSubtitleSource = '';
-        box.classList.remove('show');
-        return;
-      }
+    // Give the viewer a short reading window after Raphael stops speaking.
+    // Then erase from LEFT to RIGHT: remove the first character so the
+    // remaining text shifts left instead of shrinking from the right edge.
+    desktopSubtitleHideDelayTimer = setTimeout(() => {
+      desktopSubtitleHideDelayTimer = null;
+      desktopSubtitleHideTimer = setInterval(() => {
+        if (!desktopSubtitleShown.length) {
+          clearInterval(desktopSubtitleHideTimer);
+          desktopSubtitleHideTimer = null;
+          desktopSubtitleQueue = '';
+          desktopSubtitleSource = '';
+          if (box) box.classList.remove('show');
+          return;
+        }
 
-      desktopSubtitleShown = desktopSubtitleShown.slice(0, -1);
-      desktopSubtitleQueue = '';
-      showDesktopSubtitle(desktopSubtitleShown);
-    }, 30);
+        desktopSubtitleShown = desktopSubtitleShown.slice(1);
+        renderDesktopSubtitleWindow(desktopSubtitleShown);
+      }, 30);
+    }, 1200);
   }
 
   let currentServerAudioUrl = null;
