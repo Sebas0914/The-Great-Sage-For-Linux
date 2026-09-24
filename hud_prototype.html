@@ -6031,7 +6031,11 @@ const MINI_CHAT_PAD = 3;
       // AI speech is independent from the manual "Simulate Speech" toggle.
       // Raphael's real reply must remain audible even when interface/demo
       // sound effects are disabled.
-      if (captionFollowsSpeech && msg.text && !spanishSubtitleActive) {
+      // In desktop Raphael mode, msg.text is the Japanese speech text.
+      // Never use it as a subtitle fallback: the server's subtitle_text
+      // message is the authoritative Spanish caption for this mode.
+      if (!DESKTOP_RAPHAEL_MODE
+          && captionFollowsSpeech && msg.text && !spanishSubtitleActive) {
         aiThinking = false;
         spokenSoFar = spokenSoFar ? spokenSoFar + ' ' + msg.text : msg.text;
         showCaption(spokenSoFar);
