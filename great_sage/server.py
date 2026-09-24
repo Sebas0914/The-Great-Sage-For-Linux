@@ -1006,6 +1006,23 @@ def _translate_subtitles(provider, text: str) -> str:
     if not value:
         return ""
 
+    # Most Great Sage replies are already in the user's language (Spanish).
+    # Do not spend another remote-model round trip translating text that is
+    # already suitable for the HUD.
+    low = value.lower()
+    spanish_markers = (
+        " el ", " la ", " los ", " las ", " un ", " una ", " que ",
+        " de ", " del ", " para ", " con ", " por ", " como ",
+        " estoy ", " puedo ", " puedes ", " gracias ", " buenos ",
+        " días", " hola", " qué ", " cómo ", " también ",
+    )
+    if any(ch in value for ch in "áéíóúüñ¿¡") or sum(
+        marker in f" {low} " for marker in spanish_markers
+    ) >= 2:
+        log.info("Spanish subtitle text ready without translation: %s",
+                 value[:120].replace("\\n", " "))
+        return value
+
     def looks_japanese(s: str) -> bool:
         return any(
             0x3040 <= ord(ch) <= 0x30FF
