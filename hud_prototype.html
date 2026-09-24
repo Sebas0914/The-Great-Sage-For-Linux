@@ -5841,7 +5841,13 @@ const MINI_CHAT_PAD = 3;
     desktopSubtitleSource = String(text || '').trim();
     desktopSubtitleShown = desktopSubtitleSource;
     desktopSubtitleQueue = '';
-    if (speechInProgress && desktopSubtitleSource) {
+    const box = document.getElementById('caption-box');
+    // Desktop Raphael subtitles are authoritative and must not be disabled
+    // by the normal HUD caption toggle. That toggle can persist a
+    // "caption-disabled" class from an earlier mode, which otherwise makes
+    // the subtitle silently disappear even though subtitle_text arrived.
+    if (box) box.classList.remove('caption-disabled');
+    if (desktopSubtitleSource) {
       showDesktopSubtitle(desktopSubtitleSource);
     }
   }
