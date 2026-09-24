@@ -614,6 +614,7 @@
     cursor: pointer;
     opacity: 0;
     pointer-events: auto;
+    z-index: 102;
     transition:
       opacity 300ms ease,
       transform 300ms ease;
@@ -8256,7 +8257,11 @@ const MINI_CHAT_PAD = 3;
   });
 
   wheelItems.forEach((item) => {
-    item.addEventListener('click', () => {
+    // Keep the wheel nodes above the SVG connector layer and stop the
+    // click from falling through to the canvas/core behind them.
+    item.addEventListener('pointerdown', (e) => e.stopPropagation());
+    item.addEventListener('click', (e) => {
+      e.stopPropagation();
       const target = item.dataset.target;
       closeWheel(true);      // the panel or the overlay sounds instead
       if (target !== 'overlay') playSfx('panelOpen');
