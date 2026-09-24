@@ -52,6 +52,8 @@
      caption geometry. */
   body.desktop-raphael #caption-box {
     display: block !important;
+    visibility: visible !important;
+    opacity: 1 !important;
     position: fixed;
     left: 25%;
     right: auto;
@@ -5176,7 +5178,13 @@ const MINI_CHAT_PAD = 3;
     const el = document.getElementById('caption-text');
     const box = document.getElementById('caption-box');
     if (!el || !box) return;
+    // Desktop Raphael subtitles are independent of the normal caption
+    // preference and must remain visible even when the user previously
+    // disabled captions in another HUD mode.
+    box.classList.remove('caption-disabled');
     box.classList.add('show');
+    box.style.setProperty('opacity', '1', 'important');
+    box.style.setProperty('visibility', 'visible', 'important');
     el.textContent = text;
     if (DESKTOP_RAPHAEL_MODE) setDesktopTarget(desktopTarget.x, desktopTarget.y);
     // Desktop CSS owns the box dimensions. Do not replace its max-height
