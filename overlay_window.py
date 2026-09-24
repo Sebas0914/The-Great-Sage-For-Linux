@@ -41,6 +41,7 @@ surface format.
 """
 
 import argparse
+import json
 import ctypes
 import os
 import signal
@@ -459,6 +460,11 @@ class OverlayView(QWebEngineView):
                         if generation != self._input_mask_generation or self._dragging:
                             return
                         if not isinstance(rects, list):
+                            print(
+                                f"[overlay] desktop JS rects INVALID: "
+                                f"type={type(rects).__name__} value={rects!r}",
+                                flush=True,
+                            )
                             self._apply_wayland_input_regions([])
                             return
 
@@ -482,15 +488,16 @@ class OverlayView(QWebEngineView):
                             x2 = max(x1, min(float(w), x + rw))
                             y2 = max(y1, min(float(h), y + rh))
                             if x2 > x1 and y2 > y1:
-                                # ctypes.c_int arrays reject floats. JavaScript DOM geometry
-                # is fractional CSS pixels, so normalize to integer surface
-                # coordinates only at the native Wayland boundary.
-                ix = int(round(x1))
-                iy = int(round(y1))
-                iw = int(round(x2 - x1))
-                ih = int(round(y2 - y1))
-                if iw > 0 and ih > 0:
-                    clean_rects.append((ix, iy, iw, ih))
+                                # ctypes.c_int arrays reject floats. JavaScript DOM
+                                # geometry is fractional CSS pixels, so normalize
+                                # to integer surface coordinates only at the native
+                                # Wayland boundary.
+                                ix = int(round(x1))
+                                iy = int(round(y1))
+                                iw = int(round(x2 - x1))
+                                ih = int(round(y2 - y1))
+                                if iw > 0 and ih > 0:
+                                    clean_rects.append((ix, iy, iw, ih))
 
                         self._apply_wayland_input_regions(clean_rects)
 
@@ -500,11 +507,73 @@ class OverlayView(QWebEngineView):
                             flush=True,
                         )
 
+                def got_rects_payload(payload):
+                    """Parse an explicit JSON envelope so JS errors/undefined
+                    values cannot be silently converted to an empty QVariant."""
+                    try:
+                        if not isinstance(payload, str):
+                            print(
+                                f"[overlay] desktop JS payload INVALID: "
+                                f"type={type(payload).__name__} value={payload!r}",
+                                flush=True,
+                            )
+                            self._apply_wayland_input_regions([])
+                            return
+
+                        data = json.loads(payload)
+                        if not isinstance(data, dict):
+                            print(
+                                f"[overlay] desktop JS payload INVALID JSON envelope: "
+                                f"type={type(data).__name__} value={data!r}",
+                                flush=True,
+                            )
+                            self._apply_wayland_input_regions([])
+                            return
+
+                        if not data.get("ok"):
+                            print(
+                                f"[overlay] desktop JS rect query ERROR: "
+                                f"{data.get('error', 'unknown')} "
+                                f"stack={data.get('stack', '')}",
+                                flush=True,
+                            )
+                            self._apply_wayland_input_regions([])
+                            return
+
+                        got_rects(data.get("value"))
+
+                    except Exception as exc:
+                        print(
+                            f"[overlay] desktop JS rect payload parse failed: {exc}",
+                            flush=True,
+                        )
+                        self._apply_wayland_input_regions([])
+
                 try:
                     self.page().runJavaScript(
-                        "window.__desktopCoreInteractiveRect "
-                        "? window.__desktopCoreInteractiveRect() : null",
-                        got_rects,
+                        """(() => {
+                            try {
+                                const fn = window.__desktopCoreInteractiveRect;
+                                if (typeof fn !== "function") {
+                                    return JSON.stringify({
+                                        ok: false,
+                                        error: "window.__desktopCoreInteractiveRect is not a function",
+                                        type: typeof fn
+                                    });
+                                }
+                                return JSON.stringify({
+                                    ok: true,
+                                    value: fn()
+                                });
+                            } catch (error) {
+                                return JSON.stringify({
+                                    ok: false,
+                                    error: String(error),
+                                    stack: error && error.stack ? String(error.stack) : ""
+                                });
+                            }
+                        })()""",
+                        got_rects_payload,
                     )
                 except Exception as exc:
                     print(
