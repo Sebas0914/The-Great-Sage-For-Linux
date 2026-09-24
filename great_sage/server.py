@@ -153,6 +153,7 @@ import json
 import logging
 import os
 import queue
+import re
 import subprocess
 import sys
 import threading
@@ -220,6 +221,17 @@ def _visual_mood(state) -> str:
         return state.visual_mood()
     except Exception:
         return "CALM"
+
+def _strip_reasoning(text: str) -> str:
+    """Remove model reasoning traces before a reply can reach HUD or TTS."""
+    value = (text or "").strip()
+    if not value:
+        return ""
+    cleaned = re.sub(r"<think>.*?</think>\\s*", "", value,
+                     flags=re.I | re.S)
+    cleaned = re.sub(r"<think>.*$", "", cleaned, flags=re.I | re.S)
+    return cleaned.strip()
+
 
 def _guard_protected() -> str:
     """The prompt PROSE a reply must never recite back, built once.
@@ -591,7 +603,7 @@ def _deep_review(provider, question, draft):
 
 def _translate_spoken_japanese(provider, text: str) -> str:
     """Create the Japanese copy used ONLY by the spoken voice."""
-    value = (text or "").strip()
+    value = _strip_reasoning(text)
     if not value:
         return ""
 
@@ -843,7 +855,9 @@ def _handle_chat(text, engine, voice, sink, websocket, loop,
         # reply_chunk text back until audio starts, so a substitution is
         # invisible to Master rather than showing as text that changes on
         # screen mid-reply.
-        draft = "".join(reply_chunks)
+        draft = _strip_reasoning("".join(reply_chunks))
+        if not draft:
+            draft = "Analysis failed. No final answer was produced."
         if think and draft.strip():
             revised = _deep_review(engine.provider, text, draft)
             if revised:
@@ -983,7 +997,7 @@ def _translate_subtitles(provider, text: str) -> str:
     characters remain, retry with a stricter Spanish-only instruction rather
     than silently putting Japanese on screen.
     """
-    value = (text or "").strip()
+    value = _strip_reasoning(text)
     if not value:
         return ""
 
