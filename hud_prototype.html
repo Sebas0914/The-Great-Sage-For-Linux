@@ -8340,7 +8340,8 @@ const MINI_CHAT_PAD = 3;
       // core's on-screen radius, so it scales itself down to the overlay
       // rather than needing a separate mini layout - see the uiScale
       // floor in positionWheel().
-      if (isClick && !wheelOpen) {
+      if (isClick && (!wheelOpen || !wheelMenu.classList.contains('open'))) {
+        if (wheelOpen) closeWheel(true);
         playSfx('coreOpen');
         playLensFocus(openWheel);
       }
