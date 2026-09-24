@@ -385,6 +385,11 @@ class OverlayView(QWebEngineView):
                 continue
 
         self._wayland_interactive_rects = clean_rects
+        print(
+            f"[overlay] INPUT REGION rects={clean_rects} "
+            f"surface={w}x{h}",
+            flush=True,
+        )
 
         try:
             values = []
@@ -401,6 +406,11 @@ class OverlayView(QWebEngineView):
                 len(clean_rects),
             )
 
+            print(
+                f"[overlay] INPUT REGION native result={result} "
+                f"count={len(clean_rects)}",
+                flush=True,
+            )
             if result != 0:
                 print(
                     f"[overlay] gs_set_input_regions returned {result}",
