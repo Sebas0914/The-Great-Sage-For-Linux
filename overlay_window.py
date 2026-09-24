@@ -288,6 +288,7 @@ class OverlayView(QWebEngineView):
 
         self._desktop = os.name != "nt"
         self._desktop_hover_timer = None
+        self._wayland_top_timer = None
         if self._desktop:
             # The fullscreen surface is deliberately click-through so VS Code,
             # browsers and games underneath remain usable. Cursor position is
@@ -297,6 +298,35 @@ class OverlayView(QWebEngineView):
             self._desktop_hover_timer.timeout.connect(self._poll_desktop_hover)
             self._desktop_hover_timer.start(60)
 
+        # Some KDE/Wayland compositor paths can re-evaluate an application's
+        # normal-window stacking after another surface is activated. When the
+        # LayerShell bridge is active, reassert the OVERLAY layer periodically
+        # instead of relying only on the initial configure call.
+        if WAYLAND_SESSION:
+            self._wayland_top_timer = QTimer(self)
+            self._wayland_top_timer.timeout.connect(self._reassert_wayland_overlay)
+            self._wayland_top_timer.start(750)
+
+
+    def _reassert_wayland_overlay(self):
+        if not WAYLAND_SESSION:
+            return
+        try:
+            if self._wayland_layer and self._wayland_layer_lib and self._wayland_window_ptr:
+                self._wayland_layer_lib.gs_configure_layer(
+                    self._wayland_window_ptr,
+                    int(self.width()),
+                    int(self.height()),
+                    int(MARGIN),
+                    int(MARGIN),
+                )
+            elif self.isVisible():
+                # Fallback path: Qt cannot guarantee stacking on Wayland,
+                # but raising the tool window is still useful when the
+                # LayerShell bridge is unavailable.
+                self.raise_()
+        except Exception as exc:
+            print(f"[overlay] Wayland top-layer reassert failed: {exc}", flush=True)
 
     # ---- click-through --------------------------------------------
     def _interactive_at(self, gpos) -> bool:
