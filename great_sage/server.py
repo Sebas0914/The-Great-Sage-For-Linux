@@ -901,10 +901,23 @@ def _handle_chat(text, engine, voice, sink, websocket, loop,
         return
 
     try:
-        # Spanish subtitles are derived from the exact Japanese text
-        # that will be spoken, so the visible subtitle and Raphael's voice
-        # represent the same content.
-        subtitle_worker = None
+        # Spanish subtitles are always derived from the ORIGINAL reply.
+        # Start this branch immediately and independently from Raphael's
+        # Japanese branch. It must not depend on voice routing/sink state.
+        subtitle_worker = threading.Thread(
+            target=lambda: (
+                send({
+                    "type": "subtitle_text",
+                    "text": _translate_subtitles(
+                        getattr(engine.provider, "fast", engine.provider),
+                        guarded,
+                    ),
+                })
+            ),
+            daemon=True,
+            name="spanish-subtitles",
+        )
+        subtitle_worker.start()
 
         if speaker is not None:
             end_stream()
@@ -932,33 +945,13 @@ def _handle_chat(text, engine, voice, sink, websocket, loop,
             # its formatting while the ear is spared. Smaller models need
             # this - qwen2.5:3b leaked markdown on 3/3 list-inviting
             # prompts, and hardening the prompt only reached 1/3.
-            # Keep both output branches anchored to the same original
-            # assistant response. Voice is translated independently to
-            # Japanese; subtitles are translated independently to Spanish.
-            # Neither translation is fed into the other.
+            # The subtitle branch above and Raphael's voice branch both
+            # start from this same original response. Neither translation
+            # is fed into the other.
             original_reply = guarded
-
-            # Translation branches are independent and start at the same
-            # time from the original reply. Use the fast route for both
-            # localization tasks so a long/code-heavy reply cannot promote
-            # a simple translation into the complex model route.
             translation_provider = getattr(
                 engine.provider, "fast", engine.provider
             )
-            subtitle_worker = threading.Thread(
-                target=lambda: (
-                    send({
-                        "type": "subtitle_text",
-                        "text": _translate_subtitles(
-                            translation_provider,
-                            original_reply,
-                        ),
-                    })
-                ),
-                daemon=True,
-                name="spanish-subtitles",
-            )
-            subtitle_worker.start()
 
             spoken_reply = _translate_spoken_japanese(
                 translation_provider, original_reply
