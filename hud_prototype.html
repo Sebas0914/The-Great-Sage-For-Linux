@@ -5830,18 +5830,33 @@ const MINI_CHAT_PAD = 3;
   let desktopSubtitleQueue = '';
   let desktopSubtitleTimer = null;
 
-  function startDesktopSubtitleTyping() {
+  function startDesktopSubtitleTyping(durationSeconds) {
     if (!DESKTOP_RAPHAEL_MODE || desktopSubtitleTimer || !desktopSubtitleSource) return;
-    desktopSubtitleTimer = setInterval(() => {
-      if (!desktopSubtitleQueue.length) {
+    const source = desktopSubtitleSource;
+    const duration = Number.isFinite(durationSeconds) && durationSeconds > 0
+      ? durationSeconds : Math.max(0.8, source.length * 0.034);
+    const startedAt = performance.now();
+    desktopSubtitleShown = '';
+    desktopSubtitleQueue = source;
+    const tick = () => {
+      const elapsed = (performance.now() - startedAt) / 1000;
+      const progress = Math.min(1, elapsed / duration);
+      const count = Math.min(source.length, Math.max(0, Math.ceil(source.length * progress)));
+      if (count !== desktopSubtitleShown.length) {
+        desktopSubtitleShown = source.slice(0, count);
+        desktopSubtitleQueue = source.slice(count);
+        showDesktopSubtitle(desktopSubtitleShown);
+      }
+      if (progress >= 1 || count >= source.length) {
+        desktopSubtitleShown = source;
+        desktopSubtitleQueue = '';
+        showDesktopSubtitle(desktopSubtitleShown);
         clearInterval(desktopSubtitleTimer);
         desktopSubtitleTimer = null;
-        return;
       }
-      desktopSubtitleShown += desktopSubtitleQueue[0];
-      desktopSubtitleQueue = desktopSubtitleQueue.slice(1);
-      showDesktopSubtitle(desktopSubtitleShown);
-    }, 34);
+    };
+    desktopSubtitleTimer = setInterval(tick, 30);
+    tick();
   }
 
   function setDesktopSubtitleSource(text) {
@@ -5852,8 +5867,7 @@ const MINI_CHAT_PAD = 3;
     const box = document.getElementById('caption-box');
     // subtitle_text is only the Spanish subtitle payload. Do NOT show the
     // box here: Raphael's Japanese audio may still be being generated.
-    // Visibility is driven by the first audio clip and ends at speaking_done,
-    // so the subtitle stays synchronized with actual speech.
+    // The box and typing animation start from the actual audio "play" event.
     if (box) {
       box.classList.remove('caption-disabled');
       box.classList.remove('show');
@@ -5954,6 +5968,17 @@ const MINI_CHAT_PAD = 3;
       const fallback = new Audio(url);
       fallback.volume = voiceLineAudio.volume;
       fallback.preload = 'auto';
+      fallback.onplay = () => {
+        if (!DESKTOP_RAPHAEL_MODE || !spanishSubtitleActive || !desktopSubtitleSource) return;
+        if (!captionBox.classList.contains('show')) showDesktopSubtitle('');
+        if (desktopSubtitleTimer) {
+          clearInterval(desktopSubtitleTimer);
+          desktopSubtitleTimer = null;
+        }
+        startDesktopSubtitleTyping(
+          Number.isFinite(fallback.duration) ? fallback.duration : 0
+        );
+      };
       let cleaned = false;
       const finishFallback = () => {
         if (cleaned) return;
@@ -5973,6 +5998,24 @@ const MINI_CHAT_PAD = 3;
         finishFallback();
       });
     };
+    const onActualPlaybackStart = () => {
+      if (!DESKTOP_RAPHAEL_MODE || !spanishSubtitleActive || !desktopSubtitleSource) return;
+      // WebSocket receipt is not the same moment the speaker starts. Use the
+      // browser's actual playback boundary so the subtitle never leads the
+      // voice while the audio element is still buffering/starting.
+      if (!captionBox.classList.contains('show')) {
+        showDesktopSubtitle('');
+      }
+      if (desktopSubtitleTimer) {
+        clearInterval(desktopSubtitleTimer);
+        desktopSubtitleTimer = null;
+      }
+      const duration = Number.isFinite(voiceLineAudio.duration)
+        ? voiceLineAudio.duration : 0;
+      startDesktopSubtitleTyping(duration);
+    };
+    voiceLineAudio.onplay = onActualPlaybackStart;
+
     const playThroughGraph = () => {
       voiceLineAudio.play().catch((err) => {
         console.warn('Reply audio playback rejected', err);
@@ -6036,9 +6079,9 @@ const MINI_CHAT_PAD = 3;
       if (DESKTOP_RAPHAEL_MODE && spanishSubtitleActive) {
         // The first real audio clip marks the exact beginning of Raphael's
         // speech. Only now reveal the already-buffered Spanish subtitle.
-        if (desktopSubtitleSource && !captionBox.classList.contains('show')) {
-          showDesktopSubtitle(desktopSubtitleSource);
-        }
+        // Do not reveal the full subtitle on WebSocket receipt. The
+        // onplay handler above owns the real speech-start boundary and starts
+        // the typewriter animation there.
         if (!desktopSpeechPulseSeen) {
           desktopSpeechPulseSeen = true;
           triggerDesktopPresence('SPEAKING', 1.055);
