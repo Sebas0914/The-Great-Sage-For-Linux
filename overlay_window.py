@@ -289,6 +289,11 @@ class OverlayView(QWebEngineView):
         self._desktop = os.name != "nt"
         self._desktop_hover_timer = None
         self._wayland_top_timer = None
+        # Once the overlay is ready, an accidental/unexpected hide must not
+        # make Raphael disappear. Only an explicit GS_HIDE_OVERLAY request
+        # is allowed to keep the window hidden.
+        self._ready_visible = False
+        self._explicit_hide_requested = False
         if self._desktop:
             # The fullscreen surface is deliberately click-through so VS Code,
             # browsers and games underneath remain usable. Cursor position is
@@ -857,6 +862,8 @@ class OverlayView(QWebEngineView):
                 if not self._wayland_layer:
                     if not WAYLAND_SESSION:
                         place_top_right(self, self.width())
+            self._explicit_hide_requested = False
+            self._ready_visible = True
             self.show()
             if os.name == "nt":
                 _apply_ws_border(self)
@@ -884,13 +891,46 @@ class OverlayView(QWebEngineView):
             self._update_input_mask()
             return
         if title.strip() == HIDE_SENTINEL:
+            self._explicit_hide_requested = True
             self.hide()
             return
         if title.strip() == EXIT_SENTINEL:
             QApplication.instance().exit(0)
 
+    def hideEvent(self, event):
+        super().hideEvent(event)
+        if (
+            WAYLAND_SESSION
+            and self._desktop
+            and self._ready_visible
+            and not self._explicit_hide_requested
+        ):
+            # KWin/compositor focus changes must not make the visible Raphael
+            # layer disappear. Restore it on the next event-loop turn so the
+            # hide is not re-entered from inside the hideEvent itself.
+            print("[overlay] unexpected hide; restoring Raphael overlay", flush=True)
+            QTimer.singleShot(0, self._restore_unexpected_hide)
+
+    def _restore_unexpected_hide(self):
+        if (
+            not WAYLAND_SESSION
+            or not self._desktop
+            or not self._ready_visible
+            or self._explicit_hide_requested
+        ):
+            return
+        try:
+            self.show()
+            self._reassert_wayland_overlay()
+            self._update_input_mask()
+        except Exception as exc:
+            print(f"[overlay] Raphael restore after hide failed: {exc}", flush=True)
+
     def closeEvent(self, event):
         if self._desktop:
+            # A normal close request is not a valid way to dismiss the
+            # desktop Raphael overlay; the HTML exit control sends the
+            # explicit HIDE sentinel instead.
             self.hide()
             event.ignore()
             return
