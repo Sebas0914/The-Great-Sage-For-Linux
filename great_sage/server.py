@@ -976,29 +976,75 @@ def _handle_chat(text, engine, voice, sink, websocket, loop,
 
 
 def _translate_subtitles(provider, text: str) -> str:
-    """Translate the delivered reply to Spanish for HUD subtitles only.
+    """Translate the delivered Japanese speech text into Spanish subtitles.
 
-    This never changes the spoken text or the model's conversation history.
-    It is deliberately a separate, instruction-only provider call so the
-    language shown on screen can differ from Raphael's spoken language.
+    The subtitle language is intentionally independent from Raphael's spoken
+    language. Validate the model result before displaying it: if Japanese
+    characters remain, retry with a stricter Spanish-only instruction rather
+    than silently putting Japanese on screen.
     """
     value = (text or "").strip()
     if not value:
         return ""
-    prompt = (
-        "Translate the following Great Sage reply into natural, concise Spanish "
-        "for on-screen subtitles. Preserve names, numbers, code, and technical "
-        "meaning. Do not add, omit, explain, or answer anything. Return ONLY "
-        "the Spanish translation, with no quotes and no preamble.\n\n"
-        "REPLY:\n" + value
-    )
+
+    def looks_japanese(s: str) -> bool:
+        return any(
+            0x3040 <= ord(ch) <= 0x30FF
+            or 0x3400 <= ord(ch) <= 0x4DBF
+            or 0x4E00 <= ord(ch) <= 0x9FFF
+            for ch in s
+        )
+
+    def translate(instruction: str) -> str:
+        out = provider.send_message([
+            {
+                "role": "system",
+                "content": (
+                    "You are Great Sage's subtitle-localization component. "
+                    "Your ONLY job is translation. ALWAYS output natural, "
+                    "concise Spanish for on-screen subtitles. NEVER output "
+                    "Japanese, English, or commentary. Preserve names, "
+                    "numbers, code, commands, and technical identifiers "
+                    "when appropriate. Return ONLY the Spanish translation."
+                ),
+            },
+            {
+                "role": "user",
+                "content": instruction + "\n\nTEXT TO TRANSLATE:\n" + value,
+            },
+        ])
+        return (out or "").strip()
+
     try:
-        translated = provider.send_message([{"role": "user", "content": prompt}])
+        translated = translate(
+            "Translate this Japanese speech text into natural Spanish."
+        )
+
+        if translated and looks_japanese(translated):
+            log.warning(
+                "Spanish subtitle translation returned Japanese; retrying "
+                "with an explicit Spanish-only instruction."
+            )
+            translated = translate(
+                "IMPORTANT: The previous result was Japanese. Translate it "
+                "again. The output MUST be Spanish only. Do not repeat the "
+                "Japanese text and do not explain the translation."
+            )
+
+        if translated and not looks_japanese(translated):
+            log.info("Spanish subtitle text ready: %s",
+                     translated[:120].replace("\\n", " "))
+            return translated
+
+        log.error(
+            "Could not produce a validated Spanish subtitle; suppressing "
+            "the Japanese fallback instead of displaying the wrong language."
+        )
+        return ""
+
     except Exception:
         log.exception("Spanish subtitle translation failed")
-        return value
-    translated = (translated or "").strip()
-    return translated or value
+        return ""
 
 
 def _start_chat_thread(text, engine, voice, sink, websocket, loop,
