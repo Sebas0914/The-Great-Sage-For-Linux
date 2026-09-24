@@ -7556,6 +7556,14 @@ const MINI_CHAT_PAD = 3;
       }));
     });
   }
+  // The rings are a separate visual beat: they appear after the black
+  // disc has opened, but before the spokes/buttons arrive.
+  function revealWheelRims() {
+    wheelLinks.querySelectorAll('.rim, .rim-inner').forEach((el) => {
+      el.style.opacity = '';
+    });
+  }
+
   // Draws the connectors outward from the hub. Called last in the
   // sequence, once the nodes it connects actually exist on screen.
   function revealWheelLinks() {
@@ -7744,11 +7752,11 @@ const MINI_CHAT_PAD = 3;
     wheelOutline.classList.remove('expand');
 
     // Build order:
-    //   1. the black disc and its white outline ring open together
-    //   2. the hexagon pops out of the middle
-    //   3. the connectors draw AND the buttons pop, together - the
-    //      cradles arrive as the buttons they hold do, rather than being
-    //      built first and waited on
+    //   1. the black disc expands from the core
+    //   2. the concentric rings fade in and settle behind it
+    //   3. the centre hexagon follows
+    //   4. the connectors draw outward while the option buttons pop in
+    //      together, so the whole wheel finishes as one compact gesture
     wheelMenu.classList.add('open');   // pointer events on
     wheelReveal.classList.add('expand');
     wheelOutline.style.width = (badgeRadius * 2) + 'px';
@@ -7757,15 +7765,20 @@ const MINI_CHAT_PAD = 3;
 
     wheelStageTimers.push(setTimeout(() => {
       if (!wheelOpen) return;
-      wheelMenu.classList.add('hub-in');   // 2: hexagon out of the middle
-    }, 560));
+      revealWheelRims();                 // 2: rings
+    }, 650));
 
     wheelStageTimers.push(setTimeout(() => {
-      if (!wheelOpen) return;                              // 3: both at once
+      if (!wheelOpen) return;
+      wheelMenu.classList.add('hub-in'); // 3: centre hexagon
+    }, 760));
+
+    wheelStageTimers.push(setTimeout(() => {
+      if (!wheelOpen) return;            // 4: lines + buttons together
       revealWheelLinks();
       wheelMenu.classList.add('nodes-in');
       wheelOpening = false;  // sequence over; repositioning safe again
-    }, 940));
+    }, 900));
   }
 
   function closeWheel(silent) {
