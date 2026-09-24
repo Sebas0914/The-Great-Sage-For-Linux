@@ -15,7 +15,7 @@ import sys
 ACTIVE_PROVIDER = os.environ.get("GREAT_SAGE_PROVIDER", "nvidia")
 AI_ROUTING_MODE = os.environ.get("GREAT_SAGE_AI_MODE", "nvidia_first").lower()
 NVIDIA_API_BASE_URL = os.environ.get("GREAT_SAGE_NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1")
-NVIDIA_API_MODEL_FAST = os.environ.get("GREAT_SAGE_NVIDIA_FAST_MODEL", "nvidia/nemotron-3-nano-30b-a3b")
+NVIDIA_API_MODEL_FAST = os.environ.get("GREAT_SAGE_NVIDIA_FAST_MODEL", "nvidia/nemotron-3.5-lightning-30b-a3b")
 NVIDIA_API_MODEL_COMPLEX = os.environ.get("GREAT_SAGE_NVIDIA_COMPLEX_MODEL", "nvidia/nemotron-3.5-lightning-30b-a3b")
 NVIDIA_API_TIMEOUT = int(os.environ.get("GREAT_SAGE_NVIDIA_TIMEOUT", "120"))
 # Secret is intentionally supplied at runtime; never commit the key.

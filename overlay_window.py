@@ -431,13 +431,10 @@ class OverlayView(QWebEngineView):
             generation = self._input_mask_generation
             w, h = self.width(), self.height()
 
-            # El menú radial necesita toda la superficie.
-            # En modo desktop NO debemos capturar el fondo, ni siquiera
-            # durante el arrastre de Raphael.
-            if (
-                self._hit_all
-                and not (self._desktop and WAYLAND_SESSION)
-            ):
+            # Cuando la rueda está abierta, sus botones pueden quedar
+            # fuera del círculo de Raphael. En ese estado necesitamos
+            # que toda la superficie reciba eventos.
+            if self._hit_all:
                 self._apply_wayland_input_region(0, 0, w, h)
                 return
 
@@ -540,6 +537,15 @@ class OverlayView(QWebEngineView):
                             self._apply_wayland_input_regions([])
                             return
 
+                        print(
+                            f"[overlay] desktop JS DIAG: "
+                            f"desktop={data.get('desktop')!r} "
+                            f"viewport={data.get('viewport')!r} "
+                            f"core={data.get('core')!r} "
+                            f"rectCount={data.get('rectCount')!r} "
+                            f"value={data.get('value')!r}",
+                            flush=True,
+                        )
                         got_rects(data.get("value"))
 
                     except Exception as exc:
@@ -561,9 +567,25 @@ class OverlayView(QWebEngineView):
                                         type: typeof fn
                                     });
                                 }
+                                const value = fn();
                                 return JSON.stringify({
                                     ok: true,
-                                    value: fn()
+                                    desktop: typeof DESKTOP_RAPHAEL_MODE !== "undefined"
+                                        ? !!DESKTOP_RAPHAEL_MODE : null,
+                                    viewport: {
+                                        width: window.innerWidth,
+                                        height: window.innerHeight
+                                    },
+                                    core: (() => {
+                                        try {
+                                            return typeof coreScreenPosition === "function"
+                                                ? coreScreenPosition() : null;
+                                        } catch (e) {
+                                            return { error: String(e) };
+                                        }
+                                    })(),
+                                    rectCount: Array.isArray(value) ? value.length : null,
+                                    value: value
                                 });
                             } catch (error) {
                                 return JSON.stringify({
@@ -788,6 +810,7 @@ class OverlayView(QWebEngineView):
 
     # ---- page -> host ---------------------------------------------
     def _on_title(self, title: str):
+        print(f"[overlay] TITLE SIGNAL: {title!r}", flush=True)
         if title.strip() == READY_SENTINEL:
             # Placed and shown only now, so the first frame the user sees
             # is already the overlay.
@@ -816,10 +839,18 @@ class OverlayView(QWebEngineView):
             return
         if title.strip() == HIT_ALL_SENTINEL:
             self._hit_all = True
+            print(
+                f"[overlay] HIT STATE -> ALL, _hit_all={self._hit_all}",
+                flush=True,
+            )
             self._update_input_mask()
             return
         if title.strip() == HIT_CORE_SENTINEL:
             self._hit_all = False
+            print(
+                f"[overlay] HIT STATE -> CORE, _hit_all={self._hit_all}",
+                flush=True,
+            )
             self._update_input_mask()
             return
         if title.strip() == HIDE_SENTINEL:

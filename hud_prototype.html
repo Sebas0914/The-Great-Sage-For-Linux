@@ -587,729 +587,224 @@
     pointer-events: none;
     z-index: 5;
   }
-
   #wheel-menu {
-    /* inset:0, not just top/left:25%; inset: 0;
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    height: 100vh;
+    margin: 0;
+    padding: 0;
     pointer-events: none;
-    z-index: 6;
+    z-index: 100;
   }
-  #wheel-menu.open { pointer-events: auto; }
+
+  #wheel-menu.open {
+    pointer-events: auto;
+  }
+
   .wheel-item {
-    position: absolute; top: auto; left: 25%;
-    transform: none;
-    width: auto;
+    position: absolute;
+    top: 0;
+    left: 0;
+    transform: translate(-50%, -50%);
+    width: calc(76px * var(--wheel-ui-scale, 1));
     height: calc(76px * var(--wheel-ui-scale, 1));
+    margin: 0;
+    padding: 0;
     cursor: pointer;
     opacity: 0;
-    transition: opacity 300ms ease, transform 300ms ease;
+    pointer-events: auto;
+    transition:
+      opacity 300ms ease,
+      transform 300ms ease;
   }
-  /* Stage 2: the ring of buttons pops in after the hub has landed. */
+
   #wheel-menu.nodes-in .wheel-item {
-    opacity: 1; transform: none;
+    opacity: 1;
+    transform: translate(-50%, -50%);
+    pointer-events: auto;
   }
-  /* Black fill and white border together, one smooth top-to-bottom wipe -
-     same direction as #wheel-outline above, "the mini ui" combining both
-     colors as a single piece rather than two independently-moving halves. */
+
   .wheel-item-half {
-    position: absolute; top: auto; left: 25%; width: auto; height: 100%;
-    /* border-box matters here. Without it the 2px border sits OUTSIDE
-       the 76px box, making the drawn circle 80px while the JS that
-       places the cradle arcs assumes 76 (NODE_R = 38 * uiScale). The
-       border is a fixed pixel width while the radius scales, so the
-       error grew proportionally worse the smaller the UI got - which is
-       what made the buttons look off-centre in their cradles. */
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
     box-sizing: border-box;
     border-radius: 50%;
     background: transparent;
-    /* Border width scales with the rest of the menu. Fixed at 2px it
-       stayed the same weight while the circle shrank, so at the
-       overlay's 0.55 scale it read as roughly twice as heavy - the
-       decoration stopped matching the thing it decorates. border-box
-       still keeps the OUTER size at exactly 76px * scale, which is
-       what the cradle-arc maths assumes. */
-    border: calc(2px * var(--wheel-ui-scale, 1)) solid #ffffff;
+    border: calc(2px * var(--wheel-ui-scale, 1)) solid rgba(255,255,255,0.9);
     clip-path: inset(0 0 100% 0);
-    transition: clip-path 450ms ease-out, box-shadow 160ms ease, background 160ms ease;
+    transition:
+      clip-path 450ms ease-out,
+      box-shadow 160ms ease,
+      background 160ms ease;
   }
+
   #wheel-menu.nodes-in .wheel-item-half {
     clip-path: inset(0 0 0 0);
   }
-  .wheel-item:hover .wheel-item-half {
-    background: transparent;
-    box-shadow: 0 0 16px rgba(255,255,255,0.6);
-  }
-  /* Draws back slightly under the cursor, so the button recedes while
-     the rings travel outward past it - the contrast between the two
-     directions is what gives the hover its snap. Scoped to .nodes-in so
-     it can't fight the scale(0.4) -> scale(1) entrance: without that
-     guard, hovering during the pop-in would drag the button toward 0.92
-     mid-animation. */
-  #wheel-menu.nodes-in .wheel-item:hover {
-    transform: none;
-  }
-  /* Hover pulse: thin rings expanding out of the button.
-     Deliberately drawn on .wheel-item's pseudo-elements rather than on
-     .wheel-item-half - that element carries a clip-path for its own
-     wipe-in, and clip-path clips box-shadows and overflow alike, so a
-     ring drawn there would be cut off at the circle's edge instead of
-     travelling past it.
-     Two rings on a half-cycle offset, so the effect reads as continuous
-     rather than as one ring restarting. */
-  .wheel-item::before,
+
   .wheel-item::after {
     content: '';
-    position: absolute; inset: 0;
-    box-sizing: border-box;
+    position: absolute;
+    inset: calc(5px * var(--wheel-ui-scale, 1));
     border-radius: 50%;
-    /* Scaled for the same reason as .wheel-item-half's border. This one is
-       the hover pulse ring, which then expands to scale(1.55) - at a fixed
-       width on a small node that expanding ring was the heaviest thing in
-       the menu. */
-    border: calc(1.5px * var(--wheel-ui-scale, 1)) solid #ffffff;
-    opacity: 0;
+    border: 1px solid rgba(255,255,255,0.25);
     pointer-events: none;
   }
-  .wheel-item:hover::before { animation: wheel-item-pulse 1.5s ease-out infinite; }
-  .wheel-item:hover::after  { animation: wheel-item-pulse 1.5s ease-out infinite 0.75s; }
-  @keyframes wheel-item-pulse {
-    0%   { transform: none;    opacity: 0.55; }
-    100% { transform: none; opacity: 0; }
-  }
-  /* The hexagon is the anchor of the diagram, not one of the choices -
-     it deliberately gets no pulse. */
-  .wheel-item-label {
-    position: relative; z-index: 1;
-    display: flex; align-items: center; justify-content: center;
-    width: auto; height: 100%;
-    color: #ffffff; font-family: Consolas, monospace;
-    /* --wheel-text-scale, not --wheel-ui-scale. The geometry has to
-       shrink to fit the 340px overlay, but the TEXT does not have to
-       shrink with it - at the overlay's 0.55 these labels came out about
-       6px, which is below readable. positionWheel() keeps this dial at a
-       higher floor so the words stay legible inside nodes that are still
-       small enough to fit. */
-    font-size: 14px;
-    letter-spacing: calc(1px * var(--wheel-text-scale, var(--wheel-ui-scale, 1)));
-    text-align: center;
-    pointer-events: none;
-  }
-  /* The hub: a hexagon rather than a circle, so it reads as the
-     deliberate centre of a diagram instead of another button. Built from
-     two stacked clip-paths - an outer white one and a black one inset by
-     the border width - because clip-path has no border of its own. */
-  #wheel-close {
-    position: absolute; top: auto; left: 25%;
-    transform: none;
-    /* Sized from --wheel-ui-scale, which openWheel() derives from the
-       core's on-screen radius. Fixed pixel sizes meant the hub and the
-       buttons kept their absolute size while the ring they sit on grew
-       or shrank with the window, so on a small window everything
-       crowded together and on a large one it looked lost. */
-    width: auto;
-    height: calc(95px * var(--wheel-ui-scale, 1));
-    background: #ffffff;
-    clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%);
-    color: #ffffff;
-    font-family: Consolas, monospace;
-    display: flex; align-items: center; justify-content: center;
-    cursor: pointer;
-    opacity: 0;
-    /* Sits above the connector lines so they appear to run underneath
-       the hub rather than crossing over its face. */
-    z-index: 3;
-    transition: opacity 320ms ease, transform 420ms cubic-bezier(0.2, 1.3, 0.4, 1);
-  }
-  #wheel-close::after {
-    content: '';
-    position: absolute; inset: 3px;
-    background: #000000;
-    clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%);
-  }
-  .wheel-hex-label {
-    position: relative; z-index: 1;
-    font-size: 14px;
-    letter-spacing: calc(2.5px * var(--wheel-text-scale, var(--wheel-ui-scale, 1)));
-  }
-  /* Stage 1 of the sequence: the hub lands first, alone. */
-  #wheel-menu.hub-in #wheel-close { opacity: 1; transform: none; }
-  #wheel-close:hover::after { background: #161616; }
 
-  /* Connector lines + outer rim. Both start fully dashed-out and are
-     swept in by animating stroke-dashoffset to 0 (see JS). */
+  .wheel-item:hover .wheel-item-half {
+    background: rgba(255,255,255,0.08);
+    box-shadow:
+      0 0 18px rgba(150,210,255,0.35),
+      inset 0 0 12px rgba(255,255,255,0.08);
+  }
+
+  #wheel-item-label,
+  .wheel-item-label {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    box-sizing: border-box;
+    padding: 0 6px;
+    color: rgba(235,245,255,0.92);
+    font-family: Consolas, 'Courier New', monospace;
+    font-size: calc(11px * var(--wheel-text-scale, 1));
+    font-weight: 600;
+    letter-spacing: 1px;
+    text-align: center;
+    user-select: none;
+    pointer-events: none;
+  }
+
+  #wheel-close {
+    position: absolute;
+    top: 0;
+    left: 0;
+    transform: translate(-50%, -50%);
+    width: calc(108px * var(--wheel-ui-scale, 1));
+    height: calc(95px * var(--wheel-ui-scale, 1));
+    margin: 0;
+    padding: 0;
+    opacity: 0;
+    z-index: 103;
+    pointer-events: auto;
+    cursor: pointer;
+    transition:
+      opacity 320ms ease,
+      transform 420ms cubic-bezier(0.2, 1.3, 0.4, 1);
+  }
+
+  #wheel-close::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    clip-path: polygon(
+      25% 0,
+      75% 0,
+      100% 50%,
+      75% 100%,
+      25% 100%,
+      0 50%
+    );
+    background: rgba(0,0,0,0.88);
+    border: 2px solid rgba(255,255,255,0.92);
+    box-sizing: border-box;
+  }
+
+  #wheel-close:hover::before {
+    background: rgba(20,30,38,0.95);
+  }
+
+  #wheel-menu.hub-in #wheel-close {
+    opacity: 1;
+    transform: translate(-50%, -50%);
+    pointer-events: auto;
+  }
+
   #wheel-links {
-    position: absolute; top: auto; left: 25%;
-    width: auto; height: 100%;
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    padding: 0;
     pointer-events: none;
     overflow: hidden;
-    z-index: 1;
-    /* Hidden unless the menu is open. The strokes carry an inline
-       stroke-dashoffset of 0 once drawn, and nothing else was tied to
-       the menu's state - so on close the buttons and hexagon went away
-       while every line and cradle stayed painted on screen. */
+    z-index: 101;
     opacity: 0;
     transition: opacity 220ms ease;
   }
-  #wheel-menu.open #wheel-links { opacity: 1; }
-  /* Applied for a single frame while the menu is re-anchored, so it
-     jumps to the core's new position instead of sliding there. */
-  #wheel-reveal.no-move-anim, #wheel-outline.no-move-anim { transition: none !important; }
-  /* Solid, like the reference: the spoke and its cradle are one
-     continuous connector. The dash properties are set from JS purely to
-     drive the draw-on sweep, not to make it look dashed. */
+
+  #wheel-menu.open #wheel-links {
+    opacity: 1;
+  }
+
   #wheel-links .link,
-  #wheel-links .cradle {
-    stroke: #ffffff; stroke-width: auto; fill: none;
-    stroke-linecap: round;
-    opacity: 0.9;
-    transition: stroke-dashoffset 460ms ease-out;
-  }
-  /* The sector separators ARE dashed - a different element from the
-     connectors above, and deliberately fainter so the spokes read first. */
-  #wheel-links .divider {
-    stroke: #ffffff; stroke-width: auto; fill: none;
-    opacity: 0.3;
-    transition: stroke-dashoffset 700ms ease-out;
-  }
-  #wheel-links .rim {
-    stroke: #ffffff; stroke-width: auto; fill: none;
-    opacity: 0.5;
-    transition: opacity 620ms ease-out;
-  }
+  #wheel-links .cradle,
+  #wheel-links .divider,
+  #wheel-links .rim,
   #wheel-links .rim-inner {
-    stroke: #ffffff; stroke-width: auto; fill: none;
-    opacity: 0.28;
-    transition: opacity 760ms ease-out;
+    fill: none;
+    vector-effect: non-scaling-stroke;
   }
 
-  /* Camera-lens-focus punch-in: clicking a wheel item (Settings/History)
-     zooms an iris out from that button's own position to cover the
-     screen, then fades away once the center panel is ready underneath -
-     like a lens racking focus into the thing you picked, rather than
-     the panel just appearing. */
-  /* Real focus-pull: the whole view blurs and magnifies very slightly
-     (a real lens shifts size a bit while racking focus, like an eye
-     re-focusing), then settles back sharp - applied to body itself so
-     it covers the 3D scene and every DOM overlay together as one view. */
-  body {
-    transition: filter 380ms ease, transform 380ms ease;
-  }
-  body.lens-blur {
-    filter: blur(14px);
-    transform: none;
+  #wheel-links .link {
+    stroke: rgba(255,255,255,0.88);
+    stroke-width: 2;
   }
 
-  /* Startup intro - same blur+scale focus-pull mechanism as lens-blur
-     above, just slower and paired with a brightness dip, so the whole
-     page reads as fading up from black and racking into focus at once
-     rather than a quick UI transition. startup-active overrides the
-     transition duration only while the intro plays, so lens-blur (used
-     by the wheel UI) goes back to its normal quick 380ms afterward. */
-  body.startup-active {
-    transition: filter 1100ms ease-out, transform 1100ms ease-out !important;
+  #wheel-links .cradle {
+    stroke: rgba(255,255,255,0.72);
+    stroke-width: 1.5;
   }
-  body.startup-intro {
-    filter: blur(36px) brightness(0.08);
-    transform: none;
-  }
-  /* Body's OWN base rule already has a permanent 380ms transition on
-     filter/transform - just adding startup-intro would EASE INTO the
-     blurred state over that 380ms instead of snapping to it instantly
-     (transitions animate FROM the pre-change value, even at t=0), which
-     is backwards: the intro should start blurred immediately and only
-     the return-to-normal should animate. This forces zero transition
-     time for the one frame where the intro state is first applied. */
-  /* The overlay NEVER wears the intro. The intro state now starts in the
-     markup so the first paint is dark, and the overlay does not play the
-     intro that would take it off - which left it at blur(36px)
-     brightness(0.08) permanently, i.e. "the overlay visuals are gone".
-     The class removal in script fixes the normal case; this makes it
-     structural, so no future ordering bug can blank the overlay again.
 
-     Scoped to .startup-intro, NOT to body.mini on its own. A blanket
-     "filter: none !important" on the overlay also killed lens-blur,
-     which fires on core click in BOTH modes (see playLensFocus) - so
-     opening the overlay's menu lost its focus-pull entirely. This
-     cancels exactly the one state that can strand the overlay blank,
-     and leaves every deliberate body filter working. */
-  body.mini.startup-intro {
-    filter: none !important;
-    transform: none;
+  #wheel-links .divider {
+    stroke: rgba(255,255,255,0.25);
+    stroke-width: 1;
+    stroke-dasharray: 5 7;
   }
-  body.startup-snap {
-    transition: none !important;
-  }
-  /* The intro state is on <body> in the MARKUP now, so the browser's
-     FIRST paint is already blurred and dark. It used to be applied by
-     JavaScript, which meant the page painted the finished UI - chat bar,
-     test controls, a bare white line where the scene had not drawn yet -
-     for as long as it took the script to reach that line, and only then
-     blinked into the intro. Same flash the overlay had before it learned
-     to stay hidden until the page said it was ready.
 
-     Controls floating over the 3D scene are held back too, so none of
-     them hovers over an empty canvas. */
-  body.startup-intro #chat-bar,
-  body.startup-intro #controls,
-  body.startup-intro #meter,
-  body.startup-intro #center-panel-overlay {
-    opacity: 0;
+  #wheel-links .rim {
+    stroke: rgba(255,255,255,0.22);
+    stroke-width: 2;
+  }
+
+  #wheel-links .rim-inner {
+    stroke: rgba(255,255,255,0.12);
+    stroke-width: 1;
+  }
+
+  #wheel-reveal {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.78);
+    clip-path: circle(
+      0px at var(--wheel-x, 50%) var(--wheel-y, 50%)
+    );
+    transition:
+      clip-path 600ms cubic-bezier(0.2, 0.8, 0.2, 1);
     pointer-events: none;
-  }
-  #chat-bar, #controls, #meter {
-    transition: opacity 420ms ease-out;
+    z-index: 99;
   }
 
-  /* ---------- Unified center panel (Settings + History) ---------- */
-  #center-panel-overlay {
-    position: fixed; inset: 0;
-    /* No dimming backdrop - just the bar itself, nothing darkening the
-       rest of the screen behind it. */
-    display: flex; align-items: center; justify-content: center;
-    opacity: 0; pointer-events: none;
-    transition: opacity 300ms ease;
-    z-index: 7;
-  }
-  #center-panel-overlay.open { opacity: 1; pointer-events: auto; }
-  /* The frame sizes/positions the whole popup and holds the close button
-     - #center-panel itself is only the SCROLLING content, so the close
-     button (a sibling, not a child of the scrolling element) stays
-     pinned to the corner instead of scrolling away with the content. */
-  #center-panel-frame {
-    position: relative;
-    width: auto;
-    /* Full viewport height so the clip shape's corner points land on the
-       SCREEN's corners. At 66vh the flares topped out two thirds of the
-       way up and never reached them. The readable bar is still 66vh -
-       #center-panel below is that tall and centred in here, with the
-       flares using the leftover space above and below to run out. */
-    height: 100vh;
-    /* Collapsed to a thin 2px horizontal line dead-center - width clipped
-       away on both sides first (see panel-bar-open below). */
-    clip-path: inset(calc(50% - 1px) 50% calc(50% - 1px) 50%);
-  }
-  /* Two-phase reveal: first the thin center line stretches out to touch
-     both edges of the screen (width only, height still just the 2px
-     line), then it thickens vertically to its full height - reads as a
-     bar sliding out from the middle rather than a popup fading/scaling in. */
-  #center-panel-overlay.open #center-panel-frame {
-    animation: panel-bar-open 400ms ease-out both;
-  }
-  /* Closing plays the visual story backwards - thins down to a line,
-     then that line collapses to nothing at the center - like an old CRT
-     powering off, instead of the panel just vanishing instantly
-     (animations don't auto-reverse just because the class that
-     triggered them was removed, so this needs its own rule; the
-     combined .open.closing selector has to outrank the plain .open one
-     above since both would otherwise tie on specificity, hence keeping
-     .open through the whole close sequence - see closeCenterPanel()).
-     Uses its own explicit keyframes rather than animation-direction:
-     reverse, which turned out to not reliably start from the "fully
-     open" end when the animation restarts fresh on the reversed rule. */
-  #center-panel-overlay.open.closing #center-panel-frame {
-    animation: panel-bar-close 260ms ease-out both;
-  }
-  @keyframes panel-bar-close {
-    0%   { clip-path: inset(0 0 0 0); }
-    55%  { clip-path: inset(calc(50% - 1px) 0% calc(50% - 1px) 0%); }
-    100% { clip-path: inset(calc(50% - 1px) 50% calc(50% - 1px) 50%); }
-  }
-  @keyframes panel-bar-open {
-    0%   { clip-path: inset(calc(50% - 1px) 50% calc(50% - 1px) 50%); }
-    45%  { clip-path: inset(calc(50% - 1px) 0% calc(50% - 1px) 0%); }
-    100% { clip-path: inset(0 0 0 0); }
-  }
-  /* Flares the panel band's two ends out toward the screen corners while
-     leaving the middle a plain flat bar - see #ui-panel-warp. The content
-     is a centred 700px column, well inside the flat section, so the
-     ramps only ever eat empty band, never controls. */
-  /* Sits above the panel fill but below its content, so the outline
-     traces the shape's edge without ever covering a control. */
-  #center-panel-outline {
-    position: absolute; inset: 0;
-    width: auto; height: 100%;
-    pointer-events: none;
-    z-index: 1;
-  }
-  #center-panel-warp {
-    width: auto; height: 100%;
-    /* Establishes a block formatting context, which stops #center-panel's
-       17vh top margin collapsing THROUGH this wrapper. Without it that
-       margin escapes and shifts this whole element down the screen
-       instead of insetting the content inside it - which pushed the
-       bottom flare off the bottom of the viewport and left the shape
-       looking lopsided rather than even top and bottom. */
-    display: flow-root;
-    -webkit-clip-path: url(#ui-panel-warp);
-    clip-path: url(#ui-panel-warp);
-    /* Carries the panel's fill (moved off #center-panel) so the whole
-       100vh is painted and the clip has something to actually carve the
-       bar-plus-flares out of. See-through instead of solid so the
-       pixelated 3D scene behind bleeds through, with the fine grid on top
-       reinforcing that same texture. */
-    /* Driven by the "Panel darkness" slider, 0 = fully see-through,
-       1 = solid. Defaults to the 0.6 it always was. */
-    background-color: rgba(0, 0, 0, var(--panel-darkness, 0.6));
-    background-image:
-      repeating-linear-gradient(0deg, rgba(255,255,255,0.05) 0px, rgba(255,255,255,0.05) 1px, transparent 1px, transparent 4px),
-      repeating-linear-gradient(90deg, rgba(255,255,255,0.05) 0px, rgba(255,255,255,0.05) 1px, transparent 1px, transparent 4px);
-  }
-  #center-panel {
-    /* border-box so the 26px left/right padding is INCLUDED in the 100%
-       width below, not added on top of it - without this, the panel's
-       true rendered width came out wider than the viewport (100% + 52px
-       of padding), pushing everything on the right off-screen while the
-       left edge still lined up fine. */
-    box-sizing: border-box;
-    /* Centred inside the 100vh frame, sized and offset to land exactly on
-       the clip shape's FLAT section - these two numbers and the path's
-       0.16/0.84 have to move together, or the content stops lining up
-       with the bar it's supposed to sit in. */
-    width: auto; height: 68vh; margin: 16vh 0;
-    overflow-y: auto;
-    /* The panel's fill lives on #center-panel-warp now, not here. It has
-       to: this element is inset by those 17vh margins, so it paints
-       nothing in the flare regions above and below - the clip was carving
-       its shape out of empty space, which is why the top and bottom read
-       as flat instead of splaying into the corners. */
-    background: transparent;
-    color: #ffffff;
-    font-family: Consolas, monospace; font-size: 14px;
-    line-height: 1.3;
-    padding: 8px 14px;
-    scrollbar-width: auto; /* Firefox: thin white-ish line instead of the default bar */
-    scrollbar-color: #ffffff transparent;
-  }
-  /* Chromium/WebView2 (what the actual app runs in) uses this instead of
-     scrollbar-width/-color - a thin white line, no track/border. */
-  #center-panel::-webkit-scrollbar { width: auto; }
-  #center-panel::-webkit-scrollbar-track { background: transparent; }
-  #center-panel::-webkit-scrollbar-thumb { background: #ffffff; border-radius: 2px; }
-  #center-panel-overlay.open #center-panel {
-    /* Delayed to start once the bar has finished widening (~45% of the
-       400ms frame animation above), so the content flickers in only
-       after the line has extended to both edges, not simultaneously. */
-    animation: panel-glitch-in 350ms ease-out 180ms both;
-  }
-  /* Same top-to-bottom, slight-jitter reveal as the wheel/outline above,
-     applied to the panel's own content once it's open. */
-  @keyframes panel-glitch-in {
-    0%   { clip-path: inset(0 0 100% 0); }
-    100% { clip-path: inset(0 0 0 0); }
-  }
-  #center-panel h4 {
-    margin: 16px 0 8px 0; font-size: 14px; letter-spacing: 2px; opacity: 0.75; font-weight: normal;
-    border-bottom: 6%; padding-bottom: 6%;
-  }
-  #center-panel .panel-section:first-child h4:first-child { margin-top: auto; }
-  /* The background bar (#center-panel-frame/#center-panel) stays full
-     100vw - that's the key "extends to both sides of the screen" look -
-     but the actual controls inside are compact and centered rather than
-     every slider/button stretching edge-to-edge across the whole screen. */
-  .panel-section { max-width: none; margin: 0 auto; }
-  /* Voice picker: dropdown plus a replay button, side by side. */
-  #voice-candidates-list {
-    display: flex; gap: 8px; align-items: center;
-  }
-  #voice-candidates-list select { flex: 1; }
-  /* Collapsible sub-groups inside the settings panel, styled like the
-     rest of the HUD (black, hard white outline) so a long column of
-     sliders reads as a few compact groups instead. */
-  .settings-group {
-    border: 1px solid rgba(255,255,255,0.3);
-    margin: 6px 0;
-    padding: 8px 14px;
-    background: rgba(0,0,0,0.35);
-  }
-  .settings-group > summary {
-    cursor: pointer; list-style: none;
-    padding: 8px 14px; margin: 0 -10px; padding-left: 25%;
-    font-size: 14px; letter-spacing: 2px; text-transform: none;
-    opacity: 0.8;
-    transition: opacity 140ms ease, background 140ms ease;
-  }
-  .settings-group > summary:hover { opacity: 1; background: rgba(255,255,255,0.06); }
-  .settings-group > summary::-webkit-details-marker { display: none; }
-  /* Own marker, so it matches the HUD's typography instead of the
-     browser's default triangle. */
-  .settings-group > summary::before { content: '+ '; opacity: 0.6; }
-  .settings-group[open] > summary::before { content: '- '; }
-  .settings-group[open] > summary { border-bottom: 6%; }
-  .settings-group > *:last-child { margin-bottom: 6%; }
-  #center-panel .panel-divider { border: none; border-top: auto; margin: 18px 0; }
-  #center-panel-close {
-    /* Pushed down and in from the corner. At top:auto; top: auto; right: 25%; z-index: 1;
-    width: auto; height: 28px;
-    background: #000000; color: #ffffff; border: 1px solid #ffffff;
-    cursor: pointer; font-family: Consolas, monospace; font-size: 14px;
-    transition: background 140ms ease;
-  }
-  #center-panel-close:hover { background: #1a1a1a; }
-  /* Square swatch buttons - one per customizable color layer, each
-     opening its own native color-wheel picker, instead of one wide bar
-     that recolored everything at once. */
-  .color-swatch-row { display: flex; gap: 16px; margin: 6px 0 4px; }
-  .color-swatch-item {
-    display: flex; flex-direction: column; align-items: center; gap: 5px;
-    font-size: 14px; letter-spacing: 0.5px; opacity: 0.8;
-  }
-  .color-swatch-btn {
-    width: auto; height: 40px;
-    border: 2px solid #ffffff; background: transparent;
-    cursor: pointer; padding: 8px 14px;
-    transition: box-shadow 160ms ease, transform 140ms ease;
-  }
-  .color-swatch-btn:hover { box-shadow: 0 0 10px rgba(255,255,255,0.4); }
-  .color-swatch-btn:active { transform: none; }
-  #center-panel input[type="range"] {
-    width: auto;
-    margin: 6px 0 10px;
-    transition: filter 140ms ease;
-  }
-  #center-panel input[type="range"]:hover { filter: brightness(1.3); }
-  #center-panel textarea {
-    width: auto; box-sizing: border-box; resize: vertical;
-    background: rgba(0,0,0,0.5); color: #ffffff; border: 1px solid rgba(255,255,255,0.4);
-    font-family: Consolas, monospace; font-size: 14px; padding: 8px 14px;
-    margin: 4px 0 10px;
-  }
-  #center-panel label {
-    display: flex; align-items: center; gap: 6px; cursor: pointer;
-    transition: color 140ms ease;
-  }
-  #center-panel label:hover { color: #cfcfcf; }
-  .slider-label { display: block; font-size: 14px; margin-top: auto; opacity: 0.8; }
-  /* Small explanatory text under a control. Monochrome and dimmed, like
-     everything else in this panel - #ws-status signals its state with
-     opacity rather than colour, so a red error string would be the only
-     coloured thing in the whole UI. A problem is shown by going to full
-     brightness with a rule down the left instead. */
-  .setting-hint { font-size: 14px; line-height: 1.3; opacity: 0.5; margin: 5px 0 2px; }
-  .setting-hint:empty { display: none; }
-  .setting-hint.warn {
-    opacity: 1; border-left: 25%; padding-left: 25%;
-  }
-  #advanced-panel {
-    margin-top: auto; padding: 8px 14px;
-    border: 1px solid rgba(255,255,255,0.25);
-  }
-  .caption-mode-row { display: flex; gap: 14px; margin: 6px 0; }
-  #center-panel button {
-    width: auto;
-    background: #000000; color: #ffffff; border: 1px solid #ffffff;
-    font-family: Consolas, monospace; font-size: 14px; letter-spacing: 1px;
-    padding: 8px 14px; margin-top: auto; cursor: pointer;
-    transition: background 140ms ease, box-shadow 140ms ease;
-  }
-  #center-panel button:hover { background: #1a1a1a; box-shadow: 0 0 8px rgba(255,255,255,0.4); }
-  #center-panel button.active { background: #ffffff; color: #000000; }
-
-  #voice-lines-list label { font-size: 14px; line-height: 1.3; display: flex; align-items: center; gap: 6px; }
-  .voice-line-preview-btn {
-    width: auto; margin: 0 !important; padding: 8px 14px;
-    font-size: 14px;
+  #wheel-reveal.expand {
+    clip-path: circle(
+      var(--wheel-radius, 200px)
+      at var(--wheel-x, 50%) var(--wheel-y, 50%)
+    );
   }
 
-  #history-list { margin-top: auto; }
-  #history-list .empty { opacity: 0.5; }
-  .history-entry {
-    margin-bottom: 6%; max-width: none;
-    padding: 8px 14px;
-    border-left: 25%;
-  }
-  /* Master's own turns sit right and inverted, so the two speakers are
-     told apart at a glance without reading the labels. */
-  .history-entry.user {
-    margin-left: 25%; text-align: right;
-    border-left: 25%; border-right: 25%;
-    background: rgba(255,255,255,0.05);
-  }
-  .history-entry .role-label {
-    display: block; font-size: 14px; letter-spacing: 1px; opacity: 0.6; margin-bottom: 6%;
+  #wheel-outline {
+    display: none !important;
   }
 
-  /* Sidebar (saved topics) + larger transcript pane, ChatGPT/Claude-style -
-     a rectangle-in-a-rectangle rather than one flat scrolling list. */
-  #history-layout { display: flex; gap: 16px; margin-top: auto; align-items: stretch; }
-  #history-sidebar {
-    width: auto; flex-shrink: 0;
-    border-right: 25%;
-    padding-right: 25%;
-  }
-  #history-sidebar #new-chat-btn { margin-top: auto; }
-  #topic-list { margin-top: auto; }
-  .topic-item {
-    display: flex; align-items: center; gap: 4px;
-    padding: 8px 14px; margin-bottom: 6%;
-    font-size: 14px; line-height: 1.3;
-    cursor: pointer; opacity: 0.75;
-    border-left: 25%;
-    transition: opacity 140ms ease, border-color 140ms ease, background 140ms ease;
-  }
-  .topic-item-label {
-    flex: 1 1 auto; min-width: 0;
-    overflow: hidden; text-overflow: hidden; white-space: nowrap;
-    padding-right: 25%;
-  }
-  .topic-item:hover { opacity: 1; background: rgba(255,255,255,0.06); }
-  .topic-item.active { opacity: 1; border-left-color: #ffffff; background: rgba(255,255,255,0.08); }
-  /* Chat workspace (spec correction: Memory lives here, not in the core
-     menu). Same two-column shape the history panel already had, with the
-     sidebar gaining a Memory entry above the conversation list. */
-  /* The panel sections share a 700px max-width, which is right for a
-     column of settings - a long line of prose is hard to read - and wrong
-     for the chat workspace, which has a sidebar AND a transcript to fit.
-     At 700 inside a 1408px panel it sat as a narrow strip in the middle
-     with the sides empty. Only the chat section opts out. */
-  #panel-section-history {
-    max-width: none;
-    width: auto;
-    margin-left: 25%;
-    margin-right: 25%;
-  }
-  #chat-layout { display: flex; gap: 20px; margin-top: auto; align-items: stretch; }
-  #chat-sidebar {
-    flex: 0 0 208px; display: flex; flex-direction: column; gap: 6px;
-    border-right: 25%; padding-right: 25%;
-  }
-  #chat-sidebar > button {
-    background: none; border: 1px solid rgba(255,255,255,0.18);
-    color: rgba(220,240,255,0.85); text-align: left;
-    padding: 8px 14px; cursor: pointer; font: inherit;
-    letter-spacing: 0.06em; border-radius: 3px;
-  }
-  #chat-sidebar > button:hover {
-    background: rgba(255,255,255,0.08); color: #fff;
-  }
-  #memory-nav-btn.active {
-    background: rgba(240,246,252,0.9); color: #0a1420;
-    border-color: rgba(255,255,255,0.85);
-  }
-  .sidebar-divider {
-    border: 0; border-top: auto;
-    margin: 4px 0 2px;
-  }
-  #chat-main {
-    flex: 1; min-width: 0;
-    display: flex; flex-direction: column;
-    /* Without a height the column is only as tall as its content, so the
-       input bar sat directly under the last message instead of at the
-       bottom of the panel. */
-    min-height: 58vh;
-  }
-  /* The transcript takes the slack, which is what pushes the input bar
-     down to the bottom edge. */
-  #chat-view { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
-  #memory-view { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
-
-  /* Identity above the transcript. Great Sage is the name; the model is
-     technical detail and is deliberately quieter. */
-  #chat-identity {
-    border-bottom: 6%;
-    padding-bottom: 6%; margin-bottom: 6%;
-  }
-  #chat-identity-name {
-    font-size: 14px; letter-spacing: 0.22em; color: #eaf6ff;
-    text-shadow: 0 0 10px rgba(220,235,250,0.28);
-  }
-  #chat-identity-model {
-    margin-top: auto; font-size: 14px; letter-spacing: 0.1em;
-    opacity: 0.45;
-  }
-  #chat-model-provider:not(:empty)::before { content: " · "; }
-  #chat-mode-badge:not(:empty)::before { content: " · "; }
-
-
-
-  .panel-note { opacity: 0.55; font-size: 14px; line-height: 1.3; margin: 6px 0 10px; }
-  #memory-search {
-    width: auto; box-sizing: border-box; padding: 8px 14px;
-    background: rgba(255,255,255,0.04);
-    border: 1px solid rgba(255,255,255,0.16);
-    color: #dff0ff; font: inherit; letter-spacing: 0.04em; border-radius: 3px;
-  }
-  #memory-search:focus { outline: none; border-color: rgba(255,255,255,0.45); }
-  #memory-list { margin-top: auto; max-height: calc(5 * 1.3em + 16px); overflow-y: auto; }
-  #memory-list .empty { opacity: 0.5; }
-  .memory-item {
-    display: flex; align-items: flex-start; gap: 10px;
-    padding: 8px 14px;
-    border-left: 25%;
-    margin-bottom: 6%; line-height: 1.3;
-  }
-  .memory-item-text { flex: 1; min-width: 0; word-break: break-word; }
-  /* Spec S46: a compact 1:1 delete control on the right of each row. */
-  .memory-del {
-    flex: 0 0 auto; width: auto; height: 20px; line-height: 1.3;
-    text-align: center; padding: 8px 14px; cursor: pointer;
-    background: none; border: 1px solid rgba(255,255,255,0.18);
-    color: rgba(255,160,160,0.85); border-radius: 3px; font-size: 14px;
-    opacity: 0; transition: opacity 0.12s ease;
-  }
-  .memory-item:hover .memory-del { opacity: 1; }
-  .memory-del:hover { background: rgba(255,120,120,0.16); color: #fff; }
-  #memory-actions {
-    display: flex; justify-content: space-between; align-items: center;
-    margin-top: auto; font-size: 14px; opacity: 0.75;
-  }
-  #memory-clear-btn {
-    background: none; border: 1px solid rgba(255,120,120,0.35);
-    color: #ffb0b0; padding: 8px 14px; cursor: pointer;
-    font: inherit; letter-spacing: 0.06em; border-radius: 3px;
-  }
-  #memory-clear-btn:hover { background: rgba(255,90,90,0.18); color: #fff; }
-
-  /* Compact square, sized to the row rather than to its own padding.
-     The first version was a wide padded control that ate the right side
-     of every chat row and overlapped the title. */
-  .topic-menu-btn {
-    flex: 0 0 auto;
-    width: auto; height: 18px; line-height: 1.3;
-    padding: 8px 14px; margin-left: 25%;
-    background: none; border: 1px solid rgba(255,255,255,0.16);
-    color: rgba(230,240,250,0.6);
-    font-size: 14px; text-align: center; cursor: pointer;
-    opacity: 0; transition: opacity 0.12s ease, color 0.12s ease;
-  }
-  .topic-item:hover .topic-menu-btn { opacity: 1; }
-  .topic-menu-btn:hover {
-    color: #fff; border-color: rgba(255,255,255,0.5);
-  }
-
-  /* Monochrome, thin-lined, same density as the rest of Great Sage -
-     deliberately NOT a rounded blue dropdown. */
-  .topic-menu {
-    position: fixed; z-index: 40; min-width: 0;
-    background: rgba(6,12,10,0.97);
-    border: 1px solid rgba(255,255,255,0.22);
-    padding: 8px 14px;
-    box-shadow: 0 4px 18px rgba(0,0,0,0.6);
-    font-size: 14px; letter-spacing: 0.08em;
-  }
-  .topic-menu-item {
-    display: block; width: auto; text-align: left;
-    background: none; border: 0; cursor: pointer;
-    padding: 8px 14px; color: rgba(226,236,244,0.82);
-    font: inherit; letter-spacing: inherit;
-  }
-  .topic-menu-item:hover {
-    background: rgba(255,255,255,0.09); color: #fff;
-  }
-  .topic-menu-item.danger { color: rgba(255,168,168,0.85); }
-  .topic-menu-item.danger:hover {
-    background: rgba(255,120,120,0.14); color: #fff;
-  }
-  #history-main { flex: 1; min-width: 0; }
-/* ---------------- Window controls ----------------
-   The app has no native title bar (transparent=True creates the window as
-   a bare WS_POPUP), so these ARE the window buttons - and the strip beside
-   them is the only way to move the window. Hidden in overlay mode, which
-   has its own tiny exit and drags from anywhere on the visual. */
-#win-controls {
-  position: fixed;
-  top: auto; right: 25%;
-  display: flex;
-  z-index: 120;
-}
 body.mini #win-controls { display: none; }
 
 #win-controls button {
@@ -1572,8 +1067,14 @@ body.desktop-raphael #chat-bar * {
   visibility: hidden !important;
   pointer-events: none !important;
 }
-body.desktop-raphael #mini-chat {
+body.desktop-raphael #mini-chat,
+body.desktop-raphael #mini-chat-link,
+body.desktop-raphael #mini-exit,
+body.desktop-raphael #mini-drag-handle {
   display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
 }
 body.desktop-raphael #mini-drag-handle {
   opacity: 0;
@@ -1669,10 +1170,7 @@ body.mini #panel-window-chrome,
 body.mini #panel-window-buttons,
 body.mini #chat-bar,
 body.mini #center-panel-overlay,
-body.mini #center-panel-close,
-body.mini #wheel-reveal,
-body.mini #wheel-outline,
-body.mini #wheel-menu {
+body.mini #center-panel-close {
   display: none !important;
 }
 
@@ -4355,7 +3853,7 @@ Hey Ciel</textarea>
     // the overlay. The disc's own radius is 1.7 world units and the
     // cage is 3.5, so ~2.3x puts the rim just outside the cage - the
     // menu reads as sitting over the visual rather than inside it.
-    wheelRadiusScale: 2.3,
+    wheelRadiusScale: 0.90,
     // Constant rate while the model is thinking - well above the idle's
     // ceiling (0.95) so it is unmistakably a different state, not just a
     // brisk idle.
@@ -4422,13 +3920,26 @@ Hey Ciel</textarea>
   // dark circular artifacts. The Three.js cube ring remains visible.
   function isolateMiniDomVisuals() {
     if (!miniMode) return;
-    ['wheel-reveal','wheel-outline','wheel-menu','caption-box','mini-chat',
-     'mini-exit','mini-drag-handle','desktop-task-panel'].forEach((id) => {
-      const el = document.getElementById(id);
-      if (el) el.style.display = 'none';
-    });
-  }
 
+    [
+            'mini-chat',
+      'mini-exit',
+      'mini-chat-link',
+      'mini-drag-handle',
+      'desktop-task-panel',
+      'chat-bar',
+      'panel-window-chrome',
+      'panel-window-buttons',
+      'win-controls'
+    ].forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) {
+        el.style.setProperty('display', 'none', 'important');
+        el.style.setProperty('visibility', 'hidden', 'important');
+        el.style.setProperty('pointer-events', 'none', 'important');
+      }
+    });
+}
   function enforceMiniVisibility() {
     for (let i = 0; i < worldGroup.children.length; i++) {
       const child = worldGroup.children[i];
@@ -8078,6 +7589,42 @@ const MINI_CHAT_PAD = 3;
     // never per frame - so it stays put rather than tracking the core's
     // idle drift.
     const { x, y } = coreScreenPosition();
+    setTimeout(() => {
+      const itemRects = wheelItems.map((el) => {
+        const r = el.getBoundingClientRect();
+        return {
+          left: r.left,
+          top: r.top,
+          width: r.width,
+          height: r.height,
+          opacity: getComputedStyle(el).opacity,
+          pointer: getComputedStyle(el).pointerEvents
+        };
+      });
+
+      const cr = wheelCloseBtn.getBoundingClientRect();
+
+      document.title = 'GS_WHEEL_DEBUG:' +
+        JSON.stringify({
+          viewport: [window.innerWidth, window.innerHeight],
+          core: [x, y],
+          menuRect: (() => {
+            const r = wheelMenu.getBoundingClientRect();
+            return [r.left, r.top, r.width, r.height];
+          })(),
+          closeRect: [cr.left, cr.top, cr.width, cr.height],
+          items: itemRects,
+          parent: wheelMenu.parentElement
+            ? wheelMenu.parentElement.tagName + '#' +
+              (wheelMenu.parentElement.id || '') + '.' +
+              (wheelMenu.parentElement.className || '')
+            : null
+        });
+    }, 1200);
+    console.log('[wheel-debug] viewport=', window.innerWidth, window.innerHeight,
+                'core=', x, y,
+                'mini=', miniMode,
+                'items=', wheelItems.length);
     // 1.7 matches coreCubeRing's own orbit radius (see its creation
     // above) - so the black circle badge lands right at "about the size
     // of the cubed circles", scaling with the same face-size slider.
