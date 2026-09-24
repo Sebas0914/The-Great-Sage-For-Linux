@@ -52,8 +52,8 @@
      caption geometry. */
   body.desktop-raphael #caption-box {
     display: block !important;
-    visibility: visible !important;
-    opacity: 1 !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
     position: fixed;
     left: 25%;
     right: auto;
@@ -77,7 +77,9 @@
     pointer-events: none;
   }
   body.desktop-raphael #caption-box.show {
-    pointer-events: auto;
+    visibility: visible !important;
+    opacity: 1 !important;
+    pointer-events: none;
   }
   body.desktop-raphael #caption-box.dragging { cursor: grabbing; }
   body.desktop-raphael #caption-box .caption-close-btn { display: none; }
