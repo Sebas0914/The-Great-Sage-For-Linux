@@ -5831,6 +5831,7 @@ const MINI_CHAT_PAD = 3;
   let desktopSubtitleShown = '';
   let desktopSubtitleQueue = '';
   let desktopSubtitleTimer = null;
+  let desktopSubtitleHideTimer = null;
 
   function startDesktopSubtitleTyping(durationSeconds) {
     if (!DESKTOP_RAPHAEL_MODE || desktopSubtitleTimer || !desktopSubtitleSource) return;
@@ -5863,6 +5864,10 @@ const MINI_CHAT_PAD = 3;
 
   function setDesktopSubtitleSource(text) {
     if (!DESKTOP_RAPHAEL_MODE) return;
+    if (desktopSubtitleHideTimer) {
+      clearInterval(desktopSubtitleHideTimer);
+      desktopSubtitleHideTimer = null;
+    }
     desktopSubtitleSource = String(text || '').trim();
     desktopSubtitleShown = '';
     desktopSubtitleQueue = '';
@@ -5882,13 +5887,39 @@ const MINI_CHAT_PAD = 3;
       clearInterval(desktopSubtitleTimer);
       desktopSubtitleTimer = null;
     }
-    // speaking_done is emitted only after the server has finished the voice
-    // playback. Hide the subtitle at that same boundary instead of leaving
-    // an empty gray box on screen.
-    desktopSubtitleShown = '';
-    desktopSubtitleQueue = '';
+    if (desktopSubtitleHideTimer) {
+      clearInterval(desktopSubtitleHideTimer);
+      desktopSubtitleHideTimer = null;
+    }
+
     const box = document.getElementById('caption-box');
-    if (box) box.classList.remove('show');
+    const startText = desktopSubtitleShown || '';
+    desktopSubtitleQueue = '';
+
+    // Mirror the entrance animation: Raphael's Spanish subtitle is removed
+    // character-by-character after speaking_done, then the box disappears.
+    // This keeps the subtitle lifecycle visually symmetric with the typing-in.
+    if (!box || !box.classList.contains('show') || !startText) {
+      desktopSubtitleShown = '';
+      desktopSubtitleQueue = '';
+      if (box) box.classList.remove('show');
+      return;
+    }
+
+    desktopSubtitleHideTimer = setInterval(() => {
+      if (!desktopSubtitleShown.length) {
+        clearInterval(desktopSubtitleHideTimer);
+        desktopSubtitleHideTimer = null;
+        desktopSubtitleQueue = '';
+        desktopSubtitleSource = '';
+        box.classList.remove('show');
+        return;
+      }
+
+      desktopSubtitleShown = desktopSubtitleShown.slice(0, -1);
+      desktopSubtitleQueue = '';
+      showDesktopSubtitle(desktopSubtitleShown);
+    }, 30);
   }
 
   let currentServerAudioUrl = null;
