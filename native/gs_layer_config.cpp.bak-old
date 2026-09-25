@@ -1,0 +1,65 @@
+#include <QWindow>
+#include <QSize>
+#include <QMargins>
+#include <LayerShellQt/window.h>
+
+extern "C" int gs_configure_layer(
+    void *window_ptr,
+    int width,
+    int height,
+    int margin_top,
+    int margin_right)
+{
+    auto *window = static_cast<QWindow *>(window_ptr);
+    if (!window) return 1;
+
+    auto *layer = LayerShellQt::Window::get(window);
+    if (!layer) return 2;
+
+    // La superficie LayerShell ocupa toda la pantalla,
+    // pero su región de entrada se limita desde Python mediante
+    // gs_set_input_region(). Fuera de Raphael el escritorio queda
+    // completamente clicable.
+    LayerShellQt::Window::Anchors anchors;
+    anchors |= LayerShellQt::Window::AnchorTop;
+    anchors |= LayerShellQt::Window::AnchorBottom;
+    anchors |= LayerShellQt::Window::AnchorLeft;
+    anchors |= LayerShellQt::Window::AnchorRight;
+    layer->setAnchors(anchors);
+
+    layer->setMargins(QMargins(0, 0, 0, 0));
+    layer->setDesiredSize(QSize(0, 0));
+    layer->setExclusiveZone(0);
+
+    // Overlay = por encima de las ventanas normales.
+    layer->setLayer(LayerShellQt::Window::LayerOverlay);
+
+    // Nunca roba el foco de teclado.
+    layer->setKeyboardInteractivity(
+        LayerShellQt::Window::KeyboardInteractivityNone
+    );
+
+    layer->setActivateOnShow(false);
+
+    return 0;
+}
+
+
+extern "C" int gs_position_layer(
+    void *window_ptr,
+    int margin_top,
+    int margin_right)
+{
+    auto *window = static_cast<QWindow *>(window_ptr);
+    if (!window) return 1;
+
+    auto *layer = LayerShellQt::Window::get(window);
+    if (!layer) return 2;
+
+    // La superficie está anclada a TOP + RIGHT.
+    // Cambiar estos dos márgenes la mueve sin convertirla en
+    // una ventana Qt normal.
+    layer->setMargins(QMargins(0, margin_top, margin_right, 0));
+
+    return 0;
+}
