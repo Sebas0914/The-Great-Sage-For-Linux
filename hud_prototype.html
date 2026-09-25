@@ -5839,9 +5839,9 @@ const MINI_CHAT_PAD = 3;
   // the Spanish caption stays clean and predictable.
   function cleanDesktopSubtitleText(text) {
     return String(text || '')
-      .replace(/[\\u{1F000}-\\u{1FAFF}\\u{2600}-\\u{27BF}\\u{FE0F}\\u{200D}]/gu, '')
+      .replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}\u{200D}]/gu, '')
       .replace(/[ \\t]{2,}/g, ' ')
-      .replace(/ *\\n */g, '\\n')
+      .replace(/ *\n */g, '\n')
       .trim();
   }
 
