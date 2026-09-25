@@ -20,11 +20,6 @@
   }
   canvas { display: block; }
 
-  /* Linux desktop Raphael is rendered on a transparent fullscreen Wayland
-     surface. The normal HUD background must not become an opaque sheet
-     behind the desktop overlay. */
-  html.desktop-raphael, body.desktop-raphael { background: transparent !important; }
-
 
   /* Subtitle bar, now anchored near the top instead of the bottom.
      --caption-opacity is the user's settings choice, applied directly by
@@ -33,66 +28,59 @@
   #caption-box {
     --caption-opacity: 1;
     position: fixed;
-    top: 13%; left: 50%;
-    transform: translateX(-50%);
-    width: min(70%, 640px);
-    padding: 16px 26px;
-    border: 2px solid #ffffff;
-    color: #ffffff;
-    font-family: 'Consolas', monospace;
-    font-size: 16px;
-    line-height: 1.5;
-    text-align: center;
-    background: #000000;
-    opacity: 0;
-  }
-  /* Desktop Raphael subtitle: compact, dark-gray, responsive, and fully
-     contained. This is deliberately separate from the normal HUD caption
-     so the transparent desktop overlay does not inherit the large HUD
-     caption geometry. */
-  body.desktop-raphael #caption-box {
-    display: block !important;
-    visibility: hidden !important;
-    opacity: 0 !important;
-    position: fixed;
-    left: 25%;
-    right: auto;
-    bottom: 6%;
+    left: 50%;
+    bottom: 7%;
     top: auto;
-    width: 50%;
-    max-width: 50%;
-    max-height: 30vh;
+    transform: translateX(-50%);
+    width: min(72vw, 900px);
+    max-height: calc(3 * 1.35em + 28px);
     box-sizing: border-box;
-    transform: none;
-    padding: 8px 14px;
-    font-size: 14px;
-    line-height: 1.3;
-    background: rgba(42, 45, 48, 0.92);
+    padding: 12px 22px;
     border: 1px solid rgba(255,255,255,0.14);
+    color: #ffffff;
+    font-family: 'Segoe UI', 'Consolas', monospace;
+    font-size: 18px;
+    line-height: 1.35;
+    text-align: center;
+    background: rgba(82, 87, 92, 0.72);
     box-shadow: 0 8px 28px rgba(0,0,0,0.35);
     border-radius: 2px;
     overflow: hidden;
-    cursor: grab;
+    opacity: 0;
+    z-index: 9999;
+    pointer-events: none;
+  }
+  body.desktop-raphael #caption-box {
+    display: block !important;
     z-index: 9999 !important;
-    pointer-events: none;
-  }
-  body.desktop-raphael #caption-box.show {
-    visibility: visible !important;
-    opacity: 1 !important;
-    pointer-events: none;
-  }
-  body.desktop-raphael #caption-box.dragging { cursor: grabbing; }
-  body.desktop-raphael #caption-box .caption-close-btn { display: none; }
-  body.desktop-raphael #caption-text {
-    height: calc(5 * 1.3em + 2px);
-    max-height: calc(5 * 1.3em + 2px);
-    overflow: hidden;
-    overflow-x: hidden;
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-    word-break: normal;
+
+    left: 6px;
+    right: 6px;
+    bottom: 6px;
+    top: auto;
+
+    width: auto;
+    max-width: none;
+    transform: none;
+
+    padding: 5px 7px;
+    font-size: 12px;
+    line-height: 1.25;
+
+    max-height: calc(5 * 1.25em + 10px);
+    box-sizing: border-box;
   }
 
+  body.desktop-raphael #caption-box .caption-close-btn {
+    display: none;
+  }
+
+  body.desktop-raphael #caption-text {
+    max-height: calc(5 * 1.25em);
+    overflow: hidden;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
   /* Appears at full opacity immediately - the box itself no longer
      fades or unblurs in. The 700ms materialize used to run at the same
      time as the text arriving, which read as the whole panel swimming
@@ -102,7 +90,6 @@
     opacity: var(--caption-opacity);
     filter: none;
   }
-  #caption-box.show { pointer-events: auto; }
   #caption-box.caption-disabled { display: none; }
   #caption-box.move-mode { cursor: grab; border-color: #9fa4a8; }
   #caption-box.move-mode.dragging { cursor: grabbing; }
@@ -234,7 +221,7 @@
      the attach button a full-width box and the three-dot control eat 98%
      of every chat row. Scoped by ID so specificity wins without
      !important. */
-  #center-panel #chat-bar button,
+  #chat-bar button,
   #center-panel #topic-list button { width: auto; }
   #center-panel #chat-attach { width: 26px; }
   #center-panel #chat-input { flex: 1 1 auto; min-width: 0; }
@@ -359,6 +346,13 @@
     border-color: rgba(255,255,255,0.85);
   }
   #chat-bar {
+    position: fixed;
+    left: 50%;
+    bottom: 18px;
+    transform: translateX(-50%);
+    width: min(760px, calc(100vw - 40px));
+    box-sizing: border-box;
+    z-index: 12;
     flex-direction: column; align-items: stretch; gap: 0;
     /* ONE bordered container holding attach / input / THINK / SEND,
        rather than four separate outlined boxes sitting next to each
@@ -371,26 +365,26 @@
     background: rgba(0,0,0,0.55);
   }
   /* The children lose their own outlines - the container carries it. */
-  #center-panel #chat-bar #chat-input {
+  #chat-bar #chat-input {
     border: 0; background: none; padding: 4px 2px;
     color: #e8f2ff; font: inherit; letter-spacing: 0.04em;
   }
-  #center-panel #chat-bar #chat-input:focus { outline: none; }
-  #center-panel #chat-bar #chat-attach {
+  #chat-bar #chat-input:focus { outline: none; }
+  #chat-bar #chat-attach {
     border: 0; font-size: 17px; color: rgba(226,236,244,0.55);
   }
-  #center-panel #chat-bar #chat-attach:hover { color: #fff; }
-  #center-panel #chat-bar #chat-send,
-  #center-panel #chat-bar #think-toggle {
+  #chat-bar #chat-attach:hover { color: #fff; }
+  #chat-bar #chat-send,
+  #chat-bar #think-toggle {
     border: 1px solid rgba(255,255,255,0.28);
     background: none; color: rgba(230,240,250,0.8);
     padding: 4px 11px; font-size: 10px; letter-spacing: 0.14em;
   }
-  #center-panel #chat-bar #chat-send:hover,
-  #center-panel #chat-bar #think-toggle:hover {
+  #chat-bar #chat-send:hover,
+  #chat-bar #think-toggle:hover {
     color: #fff; border-color: rgba(255,255,255,0.6);
   }
-  #center-panel #chat-bar #think-toggle[aria-pressed="true"] {
+  #chat-bar #think-toggle[aria-pressed="true"] {
     background: rgba(240,246,252,0.9); color: #06100c;
     border-color: rgba(255,255,255,0.9);
   }
@@ -408,7 +402,7 @@
     background: rgba(0,0,0,0.5);
   }
   .chat-attachment img { width: 100%; height: 100%; object-fit: cover; display: block; }
-  #center-panel .chat-attachment button {
+  #chat-bar .chat-attachment button {
     position: absolute; top: -7px; right: -7px;
     width: 16px; height: 16px; padding: 0; line-height: 14px;
     background: #06100c; border: 1px solid rgba(255,255,255,0.45);
@@ -1550,6 +1544,103 @@ body.mini #center-panel details > summary { font-size: 10.5px; }
 body.mini #mini-drag-handle { z-index: 70; }
 body.mini #mini-exit { z-index: 70; }
 
+/* ---------------- DESKTOP RAPHAEL MODE ----------------
+   Linux desktop mode keeps the WebGL canvas transparent and turns the
+   existing mini scene into a compact, always-on-top Raphael presence.
+   The task panel is deliberately hover-only: it never occupies space
+   until the user points at Raphael while a task is active. */
+body.desktop-raphael > *:not(#canvas-wrap):not(.mini-keep) {
+  display: none !important;
+}
+html.desktop-raphael, body.desktop-raphael {
+  background: transparent !important;
+  background-color: transparent !important;
+  overflow: hidden;
+}
+body.desktop-raphael #canvas-wrap {
+  background: transparent !important;
+}
+body.desktop-raphael #mini-chat {
+  display: none !important;
+}
+body.desktop-raphael #mini-drag-handle {
+  opacity: 0;
+  pointer-events: none;
+}
+body.desktop-raphael #mini-exit {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 160ms ease;
+}
+body.desktop-raphael #desktop-task-panel {
+  position: fixed;
+  display: block;
+  width: min(300px, 30vw);
+  min-width: 210px;
+  max-width: 330px;
+  box-sizing: border-box;
+  padding: 12px 14px;
+  background: rgba(4, 8, 12, 0.92);
+  border: 1px solid rgba(255,255,255,0.68);
+  color: #eef7ff;
+  font: 500 11px/1.5 Consolas, "Cascadia Mono", monospace;
+  letter-spacing: 0.04em;
+  clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px),
+                     calc(100% - 8px) 100%, 0 100%, 0 8px);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.58);
+  opacity: 0;
+  transform: translateY(5px) scale(0.98);
+  transform-origin: center;
+  pointer-events: none;
+  transition: opacity 150ms ease, transform 150ms ease;
+  z-index: 90;
+}
+body.desktop-raphael #desktop-task-panel.show {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+#desktop-task-panel .task-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  opacity: 0.72;
+}
+#desktop-task-panel .task-state {
+  font-size: 13px;
+  letter-spacing: 0.05em;
+  margin-bottom: 4px;
+}
+#desktop-task-panel .task-detail {
+  opacity: 0.58;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+#desktop-task-panel .task-rule {
+  height: 1px;
+  margin: 8px 0;
+  background: rgba(255,255,255,0.16);
+}
+#desktop-task-panel .task-progress {
+  height: 2px;
+  margin-top: 9px;
+  background: rgba(255,255,255,0.10);
+  overflow: hidden;
+}
+#desktop-task-panel .task-progress > span {
+  display: block;
+  width: 38%;
+  height: 100%;
+  background: rgba(255,255,255,0.78);
+  animation: desktop-task-progress 1.2s ease-in-out infinite alternate;
+}
+@keyframes desktop-task-progress {
+  from { transform: translateX(-110%); }
+  to   { transform: translateX(250%); }
+}
+
 /* ---------------- MINI OVERLAY MODE ---------------- */
 /* Hide-everything-but, rather than listing what to hide: the page gains
    panels over time and a hide-list would quietly let new ones through
@@ -1698,32 +1789,6 @@ body.mini:hover #mini-drag-handle { opacity: 1; }
 body.mini:hover #mini-exit { opacity: 1; }
 #mini-exit:hover { color: #dff1ff; border-color: rgba(180, 220, 255, 0.5); }
 
-
-/* Floating Great Sage reactions. These states are driven by the native
-   overlay host, so they work even though most of the overlay is click-through. */
-body.mini.pet-state-pet #canvas-wrap { animation: gs-pet-breathe 620ms ease-in-out infinite alternate; }
-body.mini.pet-state-attentive #canvas-wrap { animation: gs-pet-attend 900ms ease-in-out infinite alternate; }
-body.mini.pet-state-flustered #canvas-wrap { animation: gs-pet-fluster 260ms ease-in-out infinite alternate; }
-body.mini.pet-state-confused #canvas-wrap { animation: gs-pet-confused 720ms ease-in-out infinite; }
-@keyframes gs-pet-breathe {
-  from { transform: scale(1); }
-  to { transform: scale(1.025); }
-}
-@keyframes gs-pet-attend {
-  from { filter: brightness(1); }
-  to { filter: brightness(1.12); }
-}
-@keyframes gs-pet-fluster {
-  from { transform: translateX(-2px) rotate(-0.4deg); }
-  to { transform: translateX(2px) rotate(0.4deg); }
-}
-@keyframes gs-pet-confused {
-  0%, 100% { transform: rotate(0deg) translateX(0); }
-  20% { transform: rotate(-2deg) translateX(-3px); }
-  40% { transform: rotate(2deg) translateX(3px); }
-  60% { transform: rotate(-1.5deg) translateX(-2px); }
-  80% { transform: rotate(1.5deg) translateX(2px); }
-}
 </style>
 </head>
 <body class="startup-snap startup-active startup-intro">
@@ -1940,7 +2005,8 @@ body.mini.pet-state-confused #canvas-wrap { animation: gs-pet-confused 720ms eas
             <div id="chat-identity-name">UNIQUE SKILL: GREAT SAGE</div>
             <div id="chat-identity-model">
               <span id="chat-model-name">-</span><span id="chat-model-provider"></span><span id="chat-mode-badge"></span>
-            </div>            <button id="ai-settings-btn" type="button"
+            </div>
+            <button id="ai-settings-btn" type="button"
                     title="AI settings - API keys, providers, permissions">&#9881;</button>
             </div>
           </header>
@@ -2407,7 +2473,8 @@ Hey Ciel</textarea>
        with no internet rendered nothing at all: the whole HUD is
        built on THREE, so a failed script tag is a blank window.
      - QtWebEngine (the transparent overlay host) blocks remote URLs
-       from a file:// page by default, so the CDN copy failed there       with "THREE is not defined" even WITH a connection. -->
+       from a file:// page by default, so the CDN copy failed there
+       with "THREE is not defined" even WITH a connection. -->
 <script src="vendor/three.min.js"></script>
 <script>
 (function () {
@@ -2438,7 +2505,7 @@ Hey Ciel</textarea>
   const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
   camera.position.set(0, 0, 10);
 
-  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, premultipliedAlpha: false });
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
   // Cap the render resolution. devicePixelRatio on a scaled 1440p display
   // is commonly 1.25-1.5, so rendering at it means up to 2.25x the pixels
   // of the window for a scene whose lines and glow look the same either
@@ -3406,7 +3473,8 @@ Hey Ciel</textarea>
   nebula.position.z = -6;
   worldGroup.add(nebula);
 
-  // ---------- Core icosahedron (double-shell fake-glow trick) ----------  // coreGroup only ever rotates/positions; geometryGroup and
+  // ---------- Core icosahedron (double-shell fake-glow trick) ----------
+  // coreGroup only ever rotates/positions; geometryGroup and
   // coreVisualsGroup pulse independently within it, so the wireframe
   // cage and the glowing core don't move in perfect lockstep.
   const coreGroup = new THREE.Group();
@@ -3937,7 +4005,8 @@ Hey Ciel</textarea>
   // spin to everything in it. These are animated individually below so
   // they can precess independently.
   const orbitalBands = [];
-  BAND_CONFIGS.forEach((cfg) => {    const geo = makeBandGeometry(BAND_BASE);
+  BAND_CONFIGS.forEach((cfg) => {
+    const geo = makeBandGeometry(BAND_BASE);
     // Additive so the bands glow and read through one another where they
     // cross. That means they blend rather than strictly occlude - a
     // deliberate trade: depth-writing them would give hard occlusion but
@@ -4094,12 +4163,7 @@ Hey Ciel</textarea>
     const size = 0.09 + Math.random() * 0.06;
     const geo = new THREE.BoxGeometry(size, size, size);
     const mat = new THREE.MeshBasicMaterial({
-      color: 0xffffff,
-      transparent: true,
-      opacity: 0.75 + Math.random() * 0.25,
-      depthWrite: false,
-      depthTest: false,
-      blending: THREE.NormalBlending
+      color: 0xffffff, transparent: true, opacity: 0.75 + Math.random() * 0.25
     });
     const cube = new THREE.Mesh(geo, mat);
     const angle = (i / coreCubeCount) * Math.PI * 2;
@@ -4227,7 +4291,6 @@ Hey Ciel</textarea>
   // Whitelist rather than a hide-list: worldGroup gains children from
   // several loops (bands, shooters, drifting dots, stars), and a
   // hide-list would silently miss anything added later.
-  // The compact overlay keeps the original floating cube ring around the core.
   const MINI_KEEP = [coreGroup, haloGroup, cubeRingGroup];
   let miniMode = false;
 
@@ -4261,7 +4324,7 @@ Hey Ciel</textarea>
     // the overlay. The disc's own radius is 1.7 world units and the
     // cage is 3.5, so ~2.3x puts the rim just outside the cage - the
     // menu reads as sitting over the visual rather than inside it.
-    wheelRadiusScale: 0.90,
+    wheelRadiusScale: 2.3,
     // Constant rate while the model is thinking - well above the idle's
     // ceiling (0.95) so it is unmistakably a different state, not just a
     // brisk idle.
@@ -4324,30 +4387,6 @@ Hey Ciel</textarea>
   // particle field survived into the overlay. Enforcing it last means
   // any future per-frame visibility write is overridden too, instead of
   // quietly reintroducing the bug.
-  // Mini visual isolation: hide DOM overlays while diagnosing the
-  // dark circular artifacts. The Three.js cube ring remains visible.
-  function isolateMiniDomVisuals() {
-    if (!miniMode) return;
-
-    [
-            'mini-chat',
-      'mini-exit',
-      'mini-chat-link',
-      'mini-drag-handle',
-      'desktop-task-panel',
-      'chat-bar',
-      'panel-window-chrome',
-      'panel-window-buttons',
-      'win-controls'
-    ].forEach((id) => {
-      const el = document.getElementById(id);
-      if (el) {
-        el.style.setProperty('display', 'none', 'important');
-        el.style.setProperty('visibility', 'hidden', 'important');
-        el.style.setProperty('pointer-events', 'none', 'important');
-      }
-    });
-}
   function enforceMiniVisibility() {
     for (let i = 0; i < worldGroup.children.length; i++) {
       const child = worldGroup.children[i];
@@ -4405,7 +4444,8 @@ Hey Ciel</textarea>
     const margin = 90;
     return x >= r.left - margin && x <= r.right + margin &&
            y >= r.top - margin && y <= r.bottom + margin;
-  }  const desktopMoodTargets = {
+  }
+  const desktopMoodTargets = {
     CALM:      [{x:0.50,y:0.50},{x:0.51,y:0.49}],
     THINKING:  [{x:0.49,y:0.49},{x:0.52,y:0.48}],
     LISTENING: [{x:0.50,y:0.49},{x:0.52,y:0.50}],
@@ -4528,63 +4568,20 @@ Hey Ciel</textarea>
   window.__desktopCoreInteractiveRect = () => {
     if (!DESKTOP_RAPHAEL_MODE) return null;
 
-    // Wayland admite varios rectángulos dentro de una misma región
-    // de entrada. Así Raphael y el cuadro de subtítulos son
-    // interactivos por separado, sin volver interactivo el espacio
-    // transparente que queda entre ambos.
-
-    const core = coreScreenPosition();
-    if (!core || !Number.isFinite(core.x) || !Number.isFinite(core.y)) {
-      return null;
-    }
-
-    // The interactive area follows Raphael's actual rendered position.
-    // It is deliberately larger than the visible core so it is easy to
-    // grab, but it never makes the transparent desktop interactive.
+    // LayerShell recibe coordenadas locales de esta superficie.
+    const cx = window.innerWidth * 0.50;
+    const cy = window.innerHeight * 0.50;
     const radius = Math.max(
       72,
-      Math.min(window.innerWidth, window.innerHeight) * 0.12
+      Math.min(window.innerWidth, window.innerHeight) * 0.24
     );
 
-    const rects = [{
-      x: Math.max(0, core.x - radius),
-      y: Math.max(0, core.y - radius),
-      width: Math.min(radius * 2, window.innerWidth),
-      height: Math.min(radius * 2, window.innerHeight)
-    }];
-
-    const box = document.getElementById('caption-box');
-
-    if (box && box.classList.contains('show')) {
-      const r = box.getBoundingClientRect();
-
-      if (
-        r.width > 0 &&
-        r.height > 0 &&
-        Number.isFinite(r.left) &&
-        Number.isFinite(r.top)
-      ) {
-        rects.push({
-          x: Math.max(0, r.left),
-          y: Math.max(0, r.top),
-          width: Math.min(r.width, window.innerWidth),
-          height: Math.min(r.height, window.innerHeight)
-        });
-      }
-    }
-
-    return rects;
-  };
-
-  let desktopDragGrabOffsetX = 0;
-  let desktopDragGrabOffsetY = 0;
-
-  window.__desktopBeginDrag = (xPx, yPx) => {
-    if (!DESKTOP_RAPHAEL_MODE) return;
-    const core = coreScreenPosition();
-    if (!core || !Number.isFinite(core.x) || !Number.isFinite(core.y)) return;
-    desktopDragGrabOffsetX = Number(xPx) - core.x;
-    desktopDragGrabOffsetY = Number(yPx) - core.y;
+    return {
+      x: cx - radius,
+      y: cy - radius,
+      width: radius * 2,
+      height: radius * 2
+    };
   };
 
   // El host Qt usa esto mientras se arrastra el icono. La superficie
@@ -4593,22 +4590,8 @@ Hey Ciel</textarea>
   window.__desktopSetDragPosition = (xPx, yPx, dxPx, dyPx, speedPx) => {
     if (!DESKTOP_RAPHAEL_MODE) return;
 
-    // The LayerShell surface remains fullscreen. Move Raphael inside
-    // the Three.js scene using the cursor position supplied by the host.
-    if (Number.isFinite(xPx) && Number.isFinite(yPx)) {
-      desktopDragOverride = true;
-      const targetX = Number(xPx) - desktopDragGrabOffsetX;
-      const targetY = Number(yPx) - desktopDragGrabOffsetY;
-      desktopTarget.x = Math.max(
-        0.08,
-        Math.min(0.94, targetX / Math.max(1, window.innerWidth))
-      );
-      desktopTarget.y = Math.max(
-        0.10,
-        Math.min(0.88, targetY / Math.max(1, window.innerHeight))
-      );
-    }
-
+    // La posición ya no se calcula aquí: LayerShell mueve la superficie.
+    // Aquí solo analizamos cómo está moviendo el usuario el ratón.
     const speed = Math.max(0, Number(speedPx) || 0);
     const dx = Number(dxPx) || 0;
     const dy = Number(dyPx) || 0;
@@ -5181,18 +5164,15 @@ const MINI_CHAT_PAD = 3;
     const el = document.getElementById('caption-text');
     const box = document.getElementById('caption-box');
     if (!el || !box) return;
-    // Desktop Raphael subtitles are independent of the normal caption
-    // preference and must remain visible even when the user previously
-    // disabled captions in another HUD mode.
-    box.classList.remove('caption-disabled');
     box.classList.add('show');
-    box.style.setProperty('opacity', '1', 'important');
-    box.style.setProperty('visibility', 'visible', 'important');
     el.textContent = text;
     if (DESKTOP_RAPHAEL_MODE) setDesktopTarget(desktopTarget.x, desktopTarget.y);
-    // Desktop CSS owns the box dimensions. Do not replace its max-height
-    // or overflow policy here: long Spanish subtitles must wrap and remain
-    // readable instead of being clipped to four lines.
+    // No recortar palabras desde el principio: eso partía las frases
+    // españolas y hacía desaparecer media traducción.
+    const lineHeight = parseFloat(getComputedStyle(el).lineHeight) || 20;
+    const maxHeight = lineHeight * 4;
+    el.style.maxHeight = maxHeight + 'px';
+    el.style.overflowY = 'hidden';
   }
 
   function showCaption(text) {
@@ -5294,7 +5274,7 @@ const MINI_CHAT_PAD = 3;
     captionBox.classList.toggle('move-mode', moveMode);
   });
   captionBox.addEventListener('mousedown', (e) => {
-    if (!moveMode && !DESKTOP_RAPHAEL_MODE) return;
+    if (!moveMode) return;
     draggingCaption = true;
     captionBox.classList.add('dragging');
     // Switch from the centered left:50%+transform scheme to absolute
@@ -5326,10 +5306,6 @@ const MINI_CHAT_PAD = 3;
     const centerX = (window.innerWidth - captionBox.offsetWidth) / 2;
     if (Math.abs(x - centerX) < CENTER_SNAP_RADIUS) x = centerX;
 
-    const maxLeft = Math.max(0, window.innerWidth - captionBox.offsetWidth);
-    const maxTop = Math.max(0, window.innerHeight - captionBox.offsetHeight);
-    x = Math.min(Math.max(0, x), maxLeft);
-    y = Math.min(Math.max(0, y), maxTop);
     captionBox.style.left = x + 'px';
     captionBox.style.top = y + 'px';
   });
@@ -5356,44 +5332,15 @@ const MINI_CHAT_PAD = 3;
   let captionPos = null;   // { xPct, yPct }
 
   function placeCaption() {
+    if (!captionPos) return;
     const maxLeft = Math.max(0, window.innerWidth - captionBox.offsetWidth);
     const maxTop = Math.max(0, window.innerHeight - captionBox.offsetHeight);
-
-    if (!captionPos) {
-      const x = Math.max(
-        0,
-        (window.innerWidth - captionBox.offsetWidth) / 2
-      );
-
-      const y = Math.max(
-        0,
-        window.innerHeight -
-        captionBox.offsetHeight -
-        window.innerHeight * 0.06
-      );
-
-      captionBox.style.left = x + 'px';
-      captionBox.style.top = y + 'px';
-      captionBox.style.bottom = 'auto';
-      captionBox.style.transform = 'none';
-      return;
-    }
-
-    // Restore from relative coordinates, then clamp both axes so the
-    // complete caption rectangle remains inside the current viewport.
-    const nextLeft = Math.min(
-      Math.max(0, captionPos.xPct * window.innerWidth),
-      maxLeft
-    );
-    const nextTop = Math.min(
-      Math.max(0, captionPos.yPct * window.innerHeight),
-      maxTop
-    );
-
-    captionBox.style.left = nextLeft + 'px';
-    captionBox.style.top = nextTop + 'px';
-
-    captionBox.style.bottom = 'auto';
+    captionBox.style.left =
+      Math.min(Math.max(0, captionPos.xPct * window.innerWidth), maxLeft) + 'px';
+    captionBox.style.top =
+      Math.min(Math.max(0, captionPos.yPct * window.innerHeight), maxTop) + 'px';
+    // The CSS default centres the box with translateX(-50%); an explicit
+    // left would be offset by that, so it has to go.
     captionBox.style.transform = 'none';
   }
 
@@ -5410,7 +5357,8 @@ const MINI_CHAT_PAD = 3;
     if (!pos) return;
     let { xPct, yPct } = pos;
     if (typeof xPct !== 'number' && typeof pos.left === 'number') {
-      // Older saves stored raw pixels - convert them once against the      // current viewport rather than discarding the user's placement.
+      // Older saves stored raw pixels - convert them once against the
+      // current viewport rather than discarding the user's placement.
       xPct = pos.left / Math.max(1, window.innerWidth);
       yPct = pos.top / Math.max(1, window.innerHeight);
     }
@@ -5832,143 +5780,42 @@ const MINI_CHAT_PAD = 3;
   let desktopSubtitleShown = '';
   let desktopSubtitleQueue = '';
   let desktopSubtitleTimer = null;
-  let desktopSubtitleHideTimer = null;
-  let desktopSubtitleHideDelayTimer = null;
 
-  // Raphael subtitles are text-only: remove emoji/symbol presentation so
-  // the Spanish caption stays clean and predictable.
-  function cleanDesktopSubtitleText(text) {
-    return String(text || '')
-      .replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}\u{200D}]/gu, '')
-      .replace(/[ \\t]{2,}/g, ' ')
-      .replace(/ *\n */g, '\n')
-      .trim();
-  }
-
-  // Keep the DOM to a five-line rolling window. The source remains complete
-  // for timing, while older visual lines leave through the top as new lines
-  // arrive at the bottom.
-  function renderDesktopSubtitleWindow(text) {
-    const el = document.getElementById('caption-text');
-    if (!el) return;
-    el.textContent = text;
-    el.scrollTop = el.scrollHeight;
-  }
-
-  function showDesktopSubtitle(text) {
-    if (!text) return;
-    const el = document.getElementById('caption-text');
-    const box = document.getElementById('caption-box');
-    if (!el || !box) return;
-    box.classList.remove('caption-disabled');
-    box.classList.add('show');
-    box.style.setProperty('opacity', '1', 'important');
-    box.style.setProperty('visibility', 'visible', 'important');
-    renderDesktopSubtitleWindow(text);
-    if (DESKTOP_RAPHAEL_MODE) setDesktopTarget(desktopTarget.x, desktopTarget.y);
-  }
-
-  function startDesktopSubtitleTyping(durationSeconds) {
+  function startDesktopSubtitleTyping() {
     if (!DESKTOP_RAPHAEL_MODE || desktopSubtitleTimer || !desktopSubtitleSource) return;
-    const source = desktopSubtitleSource;
-    const duration = Number.isFinite(durationSeconds) && durationSeconds > 0
-      ? durationSeconds : Math.max(0.8, source.length * 0.034);
-    const startedAt = performance.now();
-    desktopSubtitleShown = '';
-    desktopSubtitleQueue = source;
-
-    const tick = () => {
-      const elapsed = (performance.now() - startedAt) / 1000;
-      const progress = Math.min(1, elapsed / duration);
-      const count = Math.min(source.length, Math.max(0, Math.ceil(source.length * progress)));
-
-      if (count !== desktopSubtitleShown.length) {
-        desktopSubtitleShown = source.slice(0, count);
-        desktopSubtitleQueue = source.slice(count);
-        showDesktopSubtitle(desktopSubtitleShown);
-      }
-
-      if (progress >= 1 || count >= source.length) {
-        desktopSubtitleShown = source;
-        desktopSubtitleQueue = '';
-        showDesktopSubtitle(source);
+    desktopSubtitleTimer = setInterval(() => {
+      if (!desktopSubtitleQueue.length) {
         clearInterval(desktopSubtitleTimer);
         desktopSubtitleTimer = null;
+        return;
       }
-    };
-
-    desktopSubtitleTimer = setInterval(tick, 30);
-    tick();
+      desktopSubtitleShown += desktopSubtitleQueue[0];
+      desktopSubtitleQueue = desktopSubtitleQueue.slice(1);
+      showDesktopSubtitle(desktopSubtitleShown);
+    }, 34);
   }
 
   function setDesktopSubtitleSource(text) {
     if (!DESKTOP_RAPHAEL_MODE) return;
-    if (desktopSubtitleHideTimer) {
-      clearInterval(desktopSubtitleHideTimer);
-      desktopSubtitleHideTimer = null;
-    }
-    if (desktopSubtitleHideDelayTimer) {
-      clearTimeout(desktopSubtitleHideDelayTimer);
-      desktopSubtitleHideDelayTimer = null;
-    }
-
-    desktopSubtitleSource = cleanDesktopSubtitleText(text);
+    desktopSubtitleSource = String(text || '').trim();
     desktopSubtitleShown = '';
-    desktopSubtitleQueue = '';
-    const box = document.getElementById('caption-box');
-    const el = document.getElementById('caption-text');
-
-    if (box) box.classList.remove('show');
-    if (el) {
-      el.textContent = '';
-      el.scrollTop = 0;
-    }
+    desktopSubtitleQueue = desktopSubtitleSource;
+    if (speechInProgress) startDesktopSubtitleTyping();
   }
 
   function finishDesktopSubtitle() {
     if (!DESKTOP_RAPHAEL_MODE) return;
-
     if (desktopSubtitleTimer) {
       clearInterval(desktopSubtitleTimer);
       desktopSubtitleTimer = null;
     }
-    if (desktopSubtitleHideTimer) {
-      clearInterval(desktopSubtitleHideTimer);
-      desktopSubtitleHideTimer = null;
-    }
-    if (desktopSubtitleHideDelayTimer) {
-      clearTimeout(desktopSubtitleHideDelayTimer);
-      desktopSubtitleHideDelayTimer = null;
-    }
-
-    const box = document.getElementById('caption-box');
-    if (!box || !box.classList.contains('show') || !desktopSubtitleShown) {
-      desktopSubtitleShown = '';
-      desktopSubtitleQueue = '';
-      desktopSubtitleSource = '';
-      if (box) box.classList.remove('show');
-      return;
-    }
-
-    // Give the viewer a short reading window after Raphael stops speaking.
-    // Then erase from LEFT to RIGHT: remove the first character so the
-    // remaining text shifts left instead of shrinking from the right edge.
-    desktopSubtitleHideDelayTimer = setTimeout(() => {
-      desktopSubtitleHideDelayTimer = null;
-      desktopSubtitleHideTimer = setInterval(() => {
-        if (!desktopSubtitleShown.length) {
-          clearInterval(desktopSubtitleHideTimer);
-          desktopSubtitleHideTimer = null;
-          desktopSubtitleQueue = '';
-          desktopSubtitleSource = '';
-          if (box) box.classList.remove('show');
-          return;
-        }
-
-        desktopSubtitleShown = desktopSubtitleShown.slice(1);
-        renderDesktopSubtitleWindow(desktopSubtitleShown);
-      }, 30);
-    }, 1200);
+    desktopSubtitleShown = desktopSubtitleSource;
+    desktopSubtitleQueue = '';
+    if (desktopSubtitleShown) showDesktopSubtitle(desktopSubtitleShown);
+    setTimeout(() => {
+      const box = document.getElementById('caption-box');
+      if (box && !speechInProgress) box.classList.remove('show');
+    }, 900);
   }
 
   let currentServerAudioUrl = null;
@@ -6050,17 +5897,6 @@ const MINI_CHAT_PAD = 3;
       const fallback = new Audio(url);
       fallback.volume = voiceLineAudio.volume;
       fallback.preload = 'auto';
-      fallback.onplay = () => {
-        if (!DESKTOP_RAPHAEL_MODE || !spanishSubtitleActive || !desktopSubtitleSource) return;
-        if (!captionBox.classList.contains('show')) showDesktopSubtitle('');
-        if (desktopSubtitleTimer) {
-          clearInterval(desktopSubtitleTimer);
-          desktopSubtitleTimer = null;
-        }
-        startDesktopSubtitleTyping(
-          Number.isFinite(fallback.duration) ? fallback.duration : 0
-        );
-      };
       let cleaned = false;
       const finishFallback = () => {
         if (cleaned) return;
@@ -6080,23 +5916,6 @@ const MINI_CHAT_PAD = 3;
         finishFallback();
       });
     };
-    const onActualPlaybackStart = () => {
-      if (!DESKTOP_RAPHAEL_MODE || !spanishSubtitleActive || !desktopSubtitleSource) return;
-      // WebSocket receipt is not the same moment the speaker starts. Use the
-      // browser's actual playback boundary so the subtitle never leads the
-      // voice while the audio element is still buffering/starting.
-      if (!captionBox.classList.contains('show')) {
-        showDesktopSubtitle('');
-      }
-      if (desktopSubtitleTimer) {
-        clearInterval(desktopSubtitleTimer);
-        desktopSubtitleTimer = null;
-      }
-      const duration = Number.isFinite(voiceLineAudio.duration)
-        ? voiceLineAudio.duration : 0;
-      startDesktopSubtitleTyping(duration);
-    };
-    voiceLineAudio.onplay = onActualPlaybackStart;
 
     const playThroughGraph = () => {
       voiceLineAudio.play().catch((err) => {
@@ -6159,11 +5978,7 @@ const MINI_CHAT_PAD = 3;
       }
     } else if (msg.type === 'audio') {
       if (DESKTOP_RAPHAEL_MODE && spanishSubtitleActive) {
-        // The first real audio clip marks the exact beginning of Raphael's
-        // speech. Only now reveal the already-buffered Spanish subtitle.
-        // Do not reveal the full subtitle on WebSocket receipt. The
-        // onplay handler above owns the real speech-start boundary and starts
-        // the typewriter animation there.
+        startDesktopSubtitleTyping();
         if (!desktopSpeechPulseSeen) {
           desktopSpeechPulseSeen = true;
           triggerDesktopPresence('SPEAKING', 1.055);
@@ -6172,11 +5987,7 @@ const MINI_CHAT_PAD = 3;
       // AI speech is independent from the manual "Simulate Speech" toggle.
       // Raphael's real reply must remain audible even when interface/demo
       // sound effects are disabled.
-      // In desktop Raphael mode, msg.text is the Japanese speech text.
-      // Never use it as a subtitle fallback: the server's subtitle_text
-      // message is the authoritative Spanish caption for this mode.
-      if (!DESKTOP_RAPHAEL_MODE
-          && captionFollowsSpeech && msg.text && !spanishSubtitleActive) {
+      if (captionFollowsSpeech && msg.text && !spanishSubtitleActive) {
         aiThinking = false;
         spokenSoFar = spokenSoFar ? spokenSoFar + ' ' + msg.text : msg.text;
         showCaption(spokenSoFar);
@@ -6543,7 +6354,8 @@ const MINI_CHAT_PAD = 3;
       const x = document.createElement('button');
       x.type = 'button'; x.textContent = 'x'; x.title = 'Remove';
       x.addEventListener('click', () => {
-        pendingImages.splice(idx, 1);        pendingThumbs.splice(idx, 1);
+        pendingImages.splice(idx, 1);
+        pendingThumbs.splice(idx, 1);
         renderAttachments();
       });
       cell.appendChild(x);
@@ -7542,7 +7354,8 @@ const MINI_CHAT_PAD = 3;
         const px = -Math.sin(ang) * streakHalfWidth;
         const py = Math.cos(ang) * streakHalfWidth;
         pos.setXYZ(sgi * 2, cx + px, cy + py, 0);
-        pos.setXYZ(sgi * 2 + 1, cx - px, cy - py, 0);      }
+        pos.setXYZ(sgi * 2 + 1, cx - px, cy - py, 0);
+      }
       pos.needsUpdate = true;
       // No shimmer dimming (length still shimmers) - one flat value off
       // the "Laser rays visibility" slider, so they can sit semi-
@@ -7748,15 +7561,27 @@ const MINI_CHAT_PAD = 3;
     });
 
     if (miniMode) {
-      // Mini overlay: render only the explicitly whitelisted model groups.
-      // Keep the original floating cube ring, but force the mini scene to
-      // use an empty transparent canvas with no post-process background.
+      // Overlay mode renders the MODEL ONLY, onto nothing. The warp
+      // background and its composite pass are skipped entirely rather
+      // than faded out: they are what fills every pixel, so as long as
+      // either runs the canvas can never be see-through, however
+      // transparent the page around it is.
+      //
+      // fgComposite is built with transparent:true and its shader ends
+      // `gl_FragColor = vec4(col, base.a)`, so the model's own alpha
+      // survives to the canvas and the desktop shows through the gaps.
+      // Last word on visibility, after every animation routine has had
+      // its say this frame.
       enforceMiniVisibility();
-      isolateMiniDomVisuals();
-      renderer.setRenderTarget(null);
+      renderer.setRenderTarget(fgTarget);
       renderer.setClearColor(0x000000, 0);
       renderer.clear(true, true, true);
       renderer.render(scene, camera);
+
+      renderer.setRenderTarget(null);
+      renderer.setClearColor(0x000000, 0);
+      renderer.clear();
+      renderer.render(fgComposite.scene, warpCamera);
       return;
     }
 
@@ -8034,7 +7859,7 @@ const MINI_CHAT_PAD = 3;
       wheelLinks.appendChild(rim);
     });
 
-    const NODE_R = 30 * uiScale;   // .wheel-item is 60px * uiScale across
+    const NODE_R = 38 * uiScale;   // .wheel-item is 76px * uiScale across
     const CRADLE_R = NODE_R + 8 * uiScale;
     // Widened from 1.05: a wider arc wraps further around the circle, so
     // it reads as a cradle holding it rather than a small nick in front
@@ -8050,7 +7875,7 @@ const MINI_CHAT_PAD = 3;
     // sit at -90/+30/+150 deg, against edge midpoints at
     // -90.0/+30.4/+149.6 deg - within half a degree, so no repositioning
     // is needed for the lines to leave the flats squarely.
-    const hubGap = 34 * uiScale;
+    const hubGap = 47 * uiScale;
 
     nodes.forEach((n, i) => {
       const dx = Math.cos(n.angle);
@@ -8088,13 +7913,6 @@ const MINI_CHAT_PAD = 3;
         x2: cx + Math.cos(mid) * (radius + 48),
         y2: cy + Math.sin(mid) * (radius + 48 * uiScale),
       }));
-    });
-  }
-  // The rings are a separate visual beat: they appear after the black
-  // disc has opened, but before the spokes/buttons arrive.
-  function revealWheelRims() {
-    wheelLinks.querySelectorAll('.rim, .rim-inner').forEach((el) => {
-      el.style.opacity = '';
     });
   }
 
@@ -8141,42 +7959,6 @@ const MINI_CHAT_PAD = 3;
     // never per frame - so it stays put rather than tracking the core's
     // idle drift.
     const { x, y } = coreScreenPosition();
-    setTimeout(() => {
-      const itemRects = wheelItems.map((el) => {
-        const r = el.getBoundingClientRect();
-        return {
-          left: r.left,
-          top: r.top,
-          width: r.width,
-          height: r.height,
-          opacity: getComputedStyle(el).opacity,
-          pointer: getComputedStyle(el).pointerEvents
-        };
-      });
-
-      const cr = wheelCloseBtn.getBoundingClientRect();
-
-      document.title = 'GS_WHEEL_DEBUG:' +
-        JSON.stringify({
-          viewport: [window.innerWidth, window.innerHeight],
-          core: [x, y],
-          menuRect: (() => {
-            const r = wheelMenu.getBoundingClientRect();
-            return [r.left, r.top, r.width, r.height];
-          })(),
-          closeRect: [cr.left, cr.top, cr.width, cr.height],
-          items: itemRects,
-          parent: wheelMenu.parentElement
-            ? wheelMenu.parentElement.tagName + '#' +
-              (wheelMenu.parentElement.id || '') + '.' +
-              (wheelMenu.parentElement.className || '')
-            : null
-        });
-    }, 1200);
-    console.log('[wheel-debug] viewport=', window.innerWidth, window.innerHeight,
-                'core=', x, y,
-                'mini=', miniMode,
-                'items=', wheelItems.length);
     // 1.7 matches coreCubeRing's own orbit radius (see its creation
     // above) - so the black circle badge lands right at "about the size
     // of the cubed circles", scaling with the same face-size slider.
@@ -8208,7 +7990,7 @@ const MINI_CHAT_PAD = 3;
                                 window.innerWidth - x,
                                 window.innerHeight - y) - MINI_WHEEL_EDGE_PAD;
     const badgeRadius = miniMode
-      ? Math.max(20, Math.min(iconRadius * 0.62, roomToEdge))
+      ? Math.max(20, Math.min(iconRadius * miniCfg.wheelRadiusScale, roomToEdge))
       : iconRadius;
     wheelReveal.style.setProperty('--wheel-x', x + 'px');
     wheelReveal.style.setProperty('--wheel-y', y + 'px');
@@ -8229,7 +8011,7 @@ const MINI_CHAT_PAD = 3;
     // 0.55, not 0.3: at 0.3 the labels were legible only if you leaned
     // in. The overlay is glanced at, so the menu needs to be readable
     // at a glance even though it costs more of the 340px square.
-    const uiScaleFloor = miniMode ? 0.42 : 0.62;
+    const uiScaleFloor = miniMode ? 0.55 : 0.62;
     // iconRadius, NOT badgeRadius: sizing from the grown disc would
     // scale the buttons and text up with it, which is the opposite of
     // what growing the disc is for.
@@ -8244,7 +8026,7 @@ const MINI_CHAT_PAD = 3;
     // 0.62 rather than 0.55: with the smaller hub and nodes there is
     // room to space the ring out, which leaves a clear run of connector
     // between each node and the hexagon instead of them nearly touching.
-    layoutWheelItems(x, y, badgeRadius * 0.52, badgeRadius, uiScale);
+    layoutWheelItems(x, y, badgeRadius * 0.62, badgeRadius, uiScale);
     wheelOutline.style.left = x + 'px';
     wheelOutline.style.top = y + 'px';
     if (animateLinks === false) {
@@ -8269,7 +8051,7 @@ const MINI_CHAT_PAD = 3;
 
   function openWheel() {
     setHostHitRegion(true);    // the menu reaches the window's edges
-    if (wheelOpen && wheelMenu.classList.contains('open')) return;
+    if (wheelOpen) return;
     wheelOpen = true;
     wheelOpening = true;
     clearTimeout(wheelClearTimer);
@@ -8278,19 +8060,13 @@ const MINI_CHAT_PAD = 3;
 
     wheelStageTimers.forEach(clearTimeout);
     wheelStageTimers = [];
-    linkRevealTimers.forEach(clearTimeout);
-    linkRevealTimers = [];
-    linksRevealed = false;
-    wheelMenu.classList.remove('open', 'hub-in', 'nodes-in');
-    wheelReveal.classList.remove('expand');
-    wheelOutline.classList.remove('expand');
 
     // Build order:
-    //   1. the black disc expands from the core
-    //   2. the concentric rings fade in and settle behind it
-    //   3. the centre hexagon follows
-    //   4. the connectors draw outward while the option buttons pop in
-    //      together, so the whole wheel finishes as one compact gesture
+    //   1. the black disc and its white outline ring open together
+    //   2. the hexagon pops out of the middle
+    //   3. the connectors draw AND the buttons pop, together - the
+    //      cradles arrive as the buttons they hold do, rather than being
+    //      built first and waited on
     wheelMenu.classList.add('open');   // pointer events on
     wheelReveal.classList.add('expand');
     wheelOutline.style.width = (badgeRadius * 2) + 'px';
@@ -8299,20 +8075,15 @@ const MINI_CHAT_PAD = 3;
 
     wheelStageTimers.push(setTimeout(() => {
       if (!wheelOpen) return;
-      revealWheelRims();                 // 2: rings
-    }, 650));
+      wheelMenu.classList.add('hub-in');   // 2: hexagon out of the middle
+    }, 560));
 
     wheelStageTimers.push(setTimeout(() => {
-      if (!wheelOpen) return;
-      wheelMenu.classList.add('hub-in'); // 3: centre hexagon
-    }, 760));
-
-    wheelStageTimers.push(setTimeout(() => {
-      if (!wheelOpen) return;            // 4: lines + buttons together
+      if (!wheelOpen) return;                              // 3: both at once
       revealWheelLinks();
       wheelMenu.classList.add('nodes-in');
       wheelOpening = false;  // sequence over; repositioning safe again
-    }, 900));
+    }, 940));
   }
 
   function closeWheel(silent) {
@@ -8560,7 +8331,8 @@ const MINI_CHAT_PAD = 3;
     // setTimeout, NOT requestAnimationFrame.
     //
     // This was two nested rAF calls, to let a frame render in overlay form
-    // before revealing the window. That deadlocked: the host keeps the    // window HIDDEN until this signal, and Chromium does not run rAF for a
+    // before revealing the window. That deadlocked: the host keeps the
+    // window HIDDEN until this signal, and Chromium does not run rAF for a
     // hidden window - so the callback never fired, the signal never came,
     // and the overlay only appeared 12 seconds later when the host's
     // failsafe gave up waiting. Measured: READY arrived at t=12.70s,
@@ -8790,11 +8562,7 @@ const MINI_CHAT_PAD = 3;
   });
 
   wheelItems.forEach((item) => {
-    // Keep the wheel nodes above the SVG connector layer and stop the
-    // click from falling through to the canvas/core behind them.
-    item.addEventListener('pointerdown', (e) => e.stopPropagation());
-    item.addEventListener('click', (e) => {
-      e.stopPropagation();
+    item.addEventListener('click', () => {
       const target = item.dataset.target;
       closeWheel(true);      // the panel or the overlay sounds instead
       if (target !== 'overlay') playSfx('panelOpen');
@@ -8891,8 +8659,7 @@ const MINI_CHAT_PAD = 3;
       // core's on-screen radius, so it scales itself down to the overlay
       // rather than needing a separate mini layout - see the uiScale
       // floor in positionWheel().
-      if (isClick && (!wheelOpen || !wheelMenu.classList.contains('open'))) {
-        if (wheelOpen) closeWheel(true);
+      if (isClick && !wheelOpen) {
         playSfx('coreOpen');
         playLensFocus(openWheel);
       }
@@ -9564,7 +9331,8 @@ const MINI_CHAT_PAD = 3;
       modeSel.onchange = () => {
         const o = modeSel.selectedOptions[0];
         if (hint && o) hint.textContent = o.dataset.description || '';
-      };    }
+      };
+    }
     fill('ai-chat-provider', cfg.providers, cfg.chat_provider);
     fill('ai-tts-provider', cfg.tts_providers, cfg.tts_provider);
     Object.keys(AI_KEY_FIELDS).forEach((name) => {

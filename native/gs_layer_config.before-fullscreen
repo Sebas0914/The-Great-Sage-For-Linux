@@ -16,25 +16,33 @@ extern "C" int gs_configure_layer(
     auto *layer = LayerShellQt::Window::get(window);
     if (!layer) return 2;
 
-    // Keep the LayerShell surface the same size as the Raphael overlay.
-    // Anchoring all four edges makes it fullscreen; on some QtWebEngine
-    // Wayland paths that turns the transparent Chromium background into a
-    // black fullscreen surface, blocking the entire desktop.
+    // La superficie NO debe ocupar toda la pantalla.
+    // Solo Raphael necesita una superficie encima del escritorio.
     //
-    // Top + right anchors give us a small, compositor-managed surface that
-    // stays above normal windows without needing fullscreen input capture.
+    // TOP + RIGHT => esquina superior derecha.
+    // DESIRED SIZE => superficie pequeña, por lo que fuera de ella
+    // Wayland puede entregar los clics a la aplicación inferior.
     LayerShellQt::Window::Anchors anchors;
     anchors |= LayerShellQt::Window::AnchorTop;
     anchors |= LayerShellQt::Window::AnchorRight;
     layer->setAnchors(anchors);
 
-    // These margins place the small surface near the top-right corner.
-    layer->setMargins(QMargins(margin_top, margin_right, 0, 0));
-    layer->setDesiredSize(QSize(width, height));
+    layer->setMargins(
+        QMargins(
+            margin_top,   // left
+            margin_right, // top-right: segundo argumento es right
+            0,
+            0
+        )
+    );
 
+    layer->setDesiredSize(QSize(width, height));
     layer->setExclusiveZone(0);
+
+    // Overlay = por encima de las ventanas normales.
     layer->setLayer(LayerShellQt::Window::LayerOverlay);
 
+    // Nunca roba el foco de teclado.
     layer->setKeyboardInteractivity(
         LayerShellQt::Window::KeyboardInteractivityNone
     );
@@ -43,6 +51,7 @@ extern "C" int gs_configure_layer(
 
     return 0;
 }
+
 
 extern "C" int gs_position_layer(
     void *window_ptr,
@@ -55,8 +64,10 @@ extern "C" int gs_position_layer(
     auto *layer = LayerShellQt::Window::get(window);
     if (!layer) return 2;
 
-    // Position the small top-right LayerShell surface using its margins.
-    layer->setMargins(QMargins(margin_top, margin_right, 0, 0));
+    // La superficie está anclada a TOP + RIGHT.
+    // Cambiar estos dos márgenes la mueve sin convertirla en
+    // una ventana Qt normal.
+    layer->setMargins(QMargins(0, margin_top, margin_right, 0));
 
     return 0;
 }

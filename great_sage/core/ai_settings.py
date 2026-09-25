@@ -253,7 +253,7 @@ def build_provider(data, fallback):
                 base_url=settings.NVIDIA_API_BASE_URL,
                 timeout=settings.NVIDIA_API_TIMEOUT,
                 reasoning_budget=getattr(settings, "NVIDIA_COMPLEX_REASONING_BUDGET", 8192),
-                enable_thinking=True,
+                enable_thinking=False,
             )
             remote = NvidiaRoutingProvider(
                 fast, complex_provider, fallback=None

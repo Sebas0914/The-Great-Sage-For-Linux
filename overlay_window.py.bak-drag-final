@@ -41,7 +41,6 @@ surface format.
 """
 
 import argparse
-import json
 import ctypes
 import os
 import signal
@@ -70,8 +69,6 @@ MINI_QUERY = "?mini=1&desktop=1" if os.name != "nt" else "?mini=1"
 EXIT_SENTINEL = "GS_EXIT_OVERLAY"
 HIDE_SENTINEL = "GS_HIDE_OVERLAY"
 OVERLAY_PID_FILE = "/tmp/great-sage-overlay.pid"
-OVERLAY_LOCK_FILE = "/tmp/great-sage-overlay.lock"
-_overlay_lock_handle = None
 
 # The page sets this once it has switched to overlay visuals. The
 # window stays HIDDEN until then: shown immediately, it displays the
@@ -180,13 +177,6 @@ def _load_wayland_native():
             ]
             _WL_INPUT.gs_set_input_region.restype = ctypes.c_int
 
-            _WL_INPUT.gs_set_input_regions.argtypes = [
-                ctypes.c_void_p,
-                ctypes.POINTER(ctypes.c_int),
-                ctypes.c_int,
-            ]
-            _WL_INPUT.gs_set_input_regions.restype = ctypes.c_int
-
     except Exception as exc:
         print(f"[overlay] Wayland native load failed: {exc}", flush=True)
         _WL_LAYER = None
@@ -231,8 +221,7 @@ class OverlayView(QWebEngineView):
         if WAYLAND_SESSION:
             flags |= Qt.WindowDoesNotAcceptFocus
         self.setWindowFlags(flags)
-        self.page().setBackgroundColor(QColor(0, 0, 0, 0))
-        self.setStyleSheet("background: transparent; border: 0;")
+        self.page().setBackgroundColor(QColor(Qt.transparent))
         # Qt must not paint its own background before Chromium draws. On a
         # translucent window that pre-paint is a candidate for the visible
         # flicker, since it briefly shows a frame the web content has not
@@ -240,25 +229,33 @@ class OverlayView(QWebEngineView):
         self.setAttribute(Qt.WA_NoSystemBackground, True)
         self.setAttribute(Qt.WA_OpaquePaintEvent, False)
 
-        # En Wayland la superficie LayerShell debe ser SOLO del tamaño del
-        # overlay. Una superficie fullscreen puede hacer que QWebEngine/Chromium
-        # pinte el fondo transparente como negro y bloquee todo el escritorio.
-        # El compositor mantiene esta superficie por encima de las ventanas
-        # normales; Raphael sigue siendo el contenido de este cuadrado.
-        self.resize(size, size)
-        effective_size = size
+        # En Wayland usamos una superficie transparente de pantalla completa.
+        # La región de entrada real se limita posteriormente a Raphael.
+        if WAYLAND_SESSION:
+            screen = QGuiApplication.primaryScreen()
+            if screen is not None:
+                screen_geo = screen.geometry()
+                self.setGeometry(screen_geo)
+                effective_size = min(
+                    screen_geo.width(),
+                    screen_geo.height(),
+                )
+            else:
+                self.resize(size, size)
+                effective_size = size
+        else:
+            self.resize(size, size)
+            effective_size = size
 
         self._filtered = None
         self._wayland_layer = False
         self._wayland_window_ptr = None
         self._wayland_layer_lib = None
         self._wayland_input = None
-        self._wayland_interactive_rects = []
-        self._input_mask_generation = 0
+        self._wayland_interactive_rect = None
         self._drag_press_pos = None
         self._dragging = False
         self._drag_offset = None
-        self._drag_window_offset = None
         self.titleChanged.connect(self._on_title)
         # The render widget does not exist yet at construction time, so the
         # filter is installed once the page has loaded (and again on show).
@@ -278,12 +275,6 @@ class OverlayView(QWebEngineView):
 
         self._desktop = os.name != "nt"
         self._desktop_hover_timer = None
-        self._wayland_top_timer = None
-        # Once the overlay is ready, an accidental/unexpected hide must not
-        # make Raphael disappear. Only an explicit GS_HIDE_OVERLAY request
-        # is allowed to keep the window hidden.
-        self._ready_visible = False
-        self._explicit_hide_requested = False
         if self._desktop:
             # The fullscreen surface is deliberately click-through so VS Code,
             # browsers and games underneath remain usable. Cursor position is
@@ -293,35 +284,6 @@ class OverlayView(QWebEngineView):
             self._desktop_hover_timer.timeout.connect(self._poll_desktop_hover)
             self._desktop_hover_timer.start(60)
 
-        # Some KDE/Wayland compositor paths can re-evaluate an application's
-        # normal-window stacking after another surface is activated. When the
-        # LayerShell bridge is active, reassert the OVERLAY layer periodically
-        # instead of relying only on the initial configure call.
-        if WAYLAND_SESSION:
-            self._wayland_top_timer = QTimer(self)
-            self._wayland_top_timer.timeout.connect(self._reassert_wayland_overlay)
-            self._wayland_top_timer.start(750)
-
-
-    def _reassert_wayland_overlay(self):
-        if not WAYLAND_SESSION:
-            return
-        try:
-            if self._wayland_layer and self._wayland_layer_lib and self._wayland_window_ptr:
-                self._wayland_layer_lib.gs_configure_layer(
-                    self._wayland_window_ptr,
-                    int(self.width()),
-                    int(self.height()),
-                    int(MARGIN),
-                    int(MARGIN),
-                )
-            elif self.isVisible():
-                # Fallback path: Qt cannot guarantee stacking on Wayland,
-                # but raising the tool window is still useful when the
-                # LayerShell bridge is unavailable.
-                self.raise_()
-        except Exception as exc:
-            print(f"[overlay] Wayland top-layer reassert failed: {exc}", flush=True)
 
     # ---- click-through --------------------------------------------
     def _interactive_at(self, gpos) -> bool:
@@ -360,7 +322,7 @@ class OverlayView(QWebEngineView):
         width = max(1, min(int(width), w - x))
         height = max(1, min(int(height), h - y))
 
-        self._wayland_interactive_rects = [(x, y, width, height)]
+        self._wayland_interactive_rect = (x, y, width, height)
 
         try:
             result = self._wayland_input.gs_set_input_region(
@@ -383,244 +345,43 @@ class OverlayView(QWebEngineView):
                 flush=True,
             )
 
-    def _apply_wayland_input_regions(self, rects):
-        """Apply multiple independent interactive rectangles to Wayland."""
-        if not (
-            WAYLAND_SESSION
-            and self._wayland_window_ptr
-            and self._wayland_input
-        ):
-            return
-
-        w = max(1, self.width())
-        h = max(1, self.height())
-
-        clean_rects = []
-
-        for rect in rects:
-            try:
-                x, y, width, height = rect
-
-                x = max(0, min(int(x), w - 1))
-                y = max(0, min(int(y), h - 1))
-                width = max(1, min(int(width), w - x))
-                height = max(1, min(int(height), h - y))
-
-                clean_rects.append((x, y, width, height))
-            except Exception:
-                continue
-
-        self._wayland_interactive_rects = clean_rects
-        print(
-            f"[overlay] INPUT REGION rects={clean_rects} "
-            f"surface={w}x{h}",
-            flush=True,
-        )
-
-        try:
-            values = []
-
-            for x, y, width, height in clean_rects:
-                values.extend([x, y, width, height])
-
-            array_type = ctypes.c_int * len(values)
-            rect_array = array_type(*values)
-
-            result = self._wayland_input.gs_set_input_regions(
-                self._wayland_window_ptr,
-                rect_array,
-                len(clean_rects),
-            )
-
-            print(
-                f"[overlay] INPUT REGION native result={result} "
-                f"count={len(clean_rects)}",
-                flush=True,
-            )
-            if result != 0:
-                print(
-                    f"[overlay] gs_set_input_regions returned {result}",
-                    flush=True,
-                )
-
-        except Exception as exc:
-            print(
-                f"[overlay] Wayland native input-regions update failed: {exc}",
-                flush=True,
-            )
-
     def _update_input_mask(self):
 
         if WAYLAND_SESSION:
-            self._input_mask_generation += 1
-            generation = self._input_mask_generation
             w, h = self.width(), self.height()
 
-            # Cuando la rueda está abierta, sus botones pueden quedar
-            # fuera del círculo de Raphael. En ese estado necesitamos
-            # que toda la superficie reciba eventos.
-            if self._hit_all:
+            # El menú radial necesita toda la superficie.
+            if self._dragging or (
+                self._hit_all
+                and not (self._desktop and WAYLAND_SESSION)
+            ):
                 self._apply_wayland_input_region(0, 0, w, h)
                 return
 
             # En modo desktop, preguntar al HTML por la posición real
             # de Raphael. Así la región de Wayland sigue al icono.
             if self._desktop:
-                # Durante el arrastre necesitamos que el cursor pueda
-                # seguir entrando en la superficie completa. El HTML
-                # continúa moviendo únicamente Raphael.
-                if self._dragging:
-                    self._apply_wayland_input_region(0, 0, w, h)
-                    return
-
-                # Raphael y el cuadro de subtítulos son zonas
-                # independientes dentro de la superficie Wayland.
-                def got_rects(rects):
+                def got_rect(rect):
                     try:
-                        # JavaScript callbacks can arrive out of order. Ignore
-                        # a result from an older geometry query.
-                        if generation != self._input_mask_generation or self._dragging:
+                        if not isinstance(rect, dict):
                             return
-                        if not isinstance(rects, list):
-                            print(
-                                f"[overlay] desktop JS rects INVALID: "
-                                f"type={type(rects).__name__} value={rects!r}",
-                                flush=True,
-                            )
-                            self._apply_wayland_input_regions([])
-                            return
-
-                        clean_rects = []
-
-                        for rect in rects:
-                            if not isinstance(rect, dict):
-                                continue
-
-                            x = float(rect.get("x", 0))
-                            y = float(rect.get("y", 0))
-                            rw = float(rect.get("width", 1))
-                            rh = float(rect.get("height", 1))
-
-                            # Clamp every rectangle to the actual Qt surface.
-                            # A stale/partially off-screen DOM rect must never
-                            # create an input region outside the LayerShell
-                            # surface, and zero-sized rectangles are discarded.
-                            x1 = max(0.0, min(float(w), x))
-                            y1 = max(0.0, min(float(h), y))
-                            x2 = max(x1, min(float(w), x + rw))
-                            y2 = max(y1, min(float(h), y + rh))
-                            if x2 > x1 and y2 > y1:
-                                # ctypes.c_int arrays reject floats. JavaScript DOM
-                                # geometry is fractional CSS pixels, so normalize
-                                # to integer surface coordinates only at the native
-                                # Wayland boundary.
-                                ix = int(round(x1))
-                                iy = int(round(y1))
-                                iw = int(round(x2 - x1))
-                                ih = int(round(y2 - y1))
-                                if iw > 0 and ih > 0:
-                                    clean_rects.append((ix, iy, iw, ih))
-
-                        self._apply_wayland_input_regions(clean_rects)
-
+                        self._apply_wayland_input_region(
+                            float(rect.get("x", 0)),
+                            float(rect.get("y", 0)),
+                            float(rect.get("width", 1)),
+                            float(rect.get("height", 1)),
+                        )
                     except Exception as exc:
                         print(
-                            f"[overlay] invalid desktop input rects: {exc}",
+                            f"[overlay] invalid desktop input rect: {exc}",
                             flush=True,
                         )
-
-                def got_rects_payload(payload):
-                    """Parse an explicit JSON envelope so JS errors/undefined
-                    values cannot be silently converted to an empty QVariant."""
-                    try:
-                        if not isinstance(payload, str):
-                            print(
-                                f"[overlay] desktop JS payload INVALID: "
-                                f"type={type(payload).__name__} value={payload!r}",
-                                flush=True,
-                            )
-                            self._apply_wayland_input_regions([])
-                            return
-
-                        data = json.loads(payload)
-                        if not isinstance(data, dict):
-                            print(
-                                f"[overlay] desktop JS payload INVALID JSON envelope: "
-                                f"type={type(data).__name__} value={data!r}",
-                                flush=True,
-                            )
-                            self._apply_wayland_input_regions([])
-                            return
-
-                        if not data.get("ok"):
-                            print(
-                                f"[overlay] desktop JS rect query ERROR: "
-                                f"{data.get('error', 'unknown')} "
-                                f"stack={data.get('stack', '')}",
-                                flush=True,
-                            )
-                            self._apply_wayland_input_regions([])
-                            return
-
-                        print(
-                            f"[overlay] desktop JS DIAG: "
-                            f"desktop={data.get('desktop')!r} "
-                            f"viewport={data.get('viewport')!r} "
-                            f"core={data.get('core')!r} "
-                            f"rectCount={data.get('rectCount')!r} "
-                            f"value={data.get('value')!r}",
-                            flush=True,
-                        )
-                        got_rects(data.get("value"))
-
-                    except Exception as exc:
-                        print(
-                            f"[overlay] desktop JS rect payload parse failed: {exc}",
-                            flush=True,
-                        )
-                        self._apply_wayland_input_regions([])
 
                 try:
                     self.page().runJavaScript(
-                        """(() => {
-                            try {
-                                const fn = window.__desktopCoreInteractiveRect;
-                                if (typeof fn !== "function") {
-                                    return JSON.stringify({
-                                        ok: false,
-                                        error: "window.__desktopCoreInteractiveRect is not a function",
-                                        type: typeof fn
-                                    });
-                                }
-                                const value = fn();
-                                return JSON.stringify({
-                                    ok: true,
-                                    desktop: typeof DESKTOP_RAPHAEL_MODE !== "undefined"
-                                        ? !!DESKTOP_RAPHAEL_MODE : null,
-                                    viewport: {
-                                        width: window.innerWidth,
-                                        height: window.innerHeight
-                                    },
-                                    core: (() => {
-                                        try {
-                                            return typeof coreScreenPosition === "function"
-                                                ? coreScreenPosition() : null;
-                                        } catch (e) {
-                                            return { error: String(e) };
-                                        }
-                                    })(),
-                                    rectCount: Array.isArray(value) ? value.length : null,
-                                    value: value
-                                });
-                            } catch (error) {
-                                return JSON.stringify({
-                                    ok: false,
-                                    error: String(error),
-                                    stack: error && error.stack ? String(error.stack) : ""
-                                });
-                            }
-                        })()""",
-                        got_rects_payload,
+                        "window.__desktopCoreInteractiveRect "
+                        "? window.__desktopCoreInteractiveRect() : null",
+                        got_rect,
                     )
                 except Exception as exc:
                     print(
@@ -754,16 +515,13 @@ class OverlayView(QWebEngineView):
         self._wayland_layer = ok
 
         if ok:
-            # The LayerShell surface is fullscreen and fixed. Raphael's
-            # position is controlled by the HTML scene, not by LayerShell.
-            # Start with an EMPTY input region: the page may not have its
-            # geometry ready yet, and an old/default region would otherwise
-            # swallow clicks across the entire desktop.
+            # Posición inicial: esquina superior derecha.
+            self._place_wayland_top_right()
+
             print(
                 "[overlay] Wayland LayerShellQt overlay enabled",
                 flush=True,
             )
-            self._apply_wayland_input_regions([])
             self._update_input_mask()
 
         return ok
@@ -800,13 +558,6 @@ class OverlayView(QWebEngineView):
     def _poll_desktop_hover(self):
         if not self._desktop or not self.isVisible():
             return
-
-        # El caption puede aparecer/desaparecer o cambiar de tamaño
-        # mientras Raphael permanece en el mismo sitio. Recalcular la
-        # región nativa mantiene ambos elementos interactivos sin hacer
-        # clickeable el fondo transparente.
-        self._update_input_mask()
-
         p = QCursor.pos()
 
         def got_core(core):
@@ -835,7 +586,6 @@ class OverlayView(QWebEngineView):
 
     # ---- page -> host ---------------------------------------------
     def _on_title(self, title: str):
-        print(f"[overlay] TITLE SIGNAL: {title!r}", flush=True)
         if title.strip() == READY_SENTINEL:
             # Placed and shown only now, so the first frame the user sees
             # is already the overlay.
@@ -852,8 +602,6 @@ class OverlayView(QWebEngineView):
                 if not self._wayland_layer:
                     if not WAYLAND_SESSION:
                         place_top_right(self, self.width())
-            self._explicit_hide_requested = False
-            self._ready_visible = True
             self.show()
             if os.name == "nt":
                 _apply_ws_border(self)
@@ -866,61 +614,20 @@ class OverlayView(QWebEngineView):
             return
         if title.strip() == HIT_ALL_SENTINEL:
             self._hit_all = True
-            print(
-                f"[overlay] HIT STATE -> ALL, _hit_all={self._hit_all}",
-                flush=True,
-            )
             self._update_input_mask()
             return
         if title.strip() == HIT_CORE_SENTINEL:
             self._hit_all = False
-            print(
-                f"[overlay] HIT STATE -> CORE, _hit_all={self._hit_all}",
-                flush=True,
-            )
             self._update_input_mask()
             return
         if title.strip() == HIDE_SENTINEL:
-            self._explicit_hide_requested = True
             self.hide()
             return
         if title.strip() == EXIT_SENTINEL:
             QApplication.instance().exit(0)
 
-    def hideEvent(self, event):
-        super().hideEvent(event)
-        if (
-            WAYLAND_SESSION
-            and self._desktop
-            and self._ready_visible
-            and not self._explicit_hide_requested
-        ):
-            # KWin/compositor focus changes must not make the visible Raphael
-            # layer disappear. Restore it on the next event-loop turn so the
-            # hide is not re-entered from inside the hideEvent itself.
-            print("[overlay] unexpected hide; restoring Raphael overlay", flush=True)
-            QTimer.singleShot(0, self._restore_unexpected_hide)
-
-    def _restore_unexpected_hide(self):
-        if (
-            not WAYLAND_SESSION
-            or not self._desktop
-            or not self._ready_visible
-            or self._explicit_hide_requested
-        ):
-            return
-        try:
-            self.show()
-            self._reassert_wayland_overlay()
-            self._update_input_mask()
-        except Exception as exc:
-            print(f"[overlay] Raphael restore after hide failed: {exc}", flush=True)
-
     def closeEvent(self, event):
         if self._desktop:
-            # A normal close request is not a valid way to dismiss the
-            # desktop Raphael overlay; the HTML exit control sends the
-            # explicit HIDE sentinel instead.
             self.hide()
             event.ignore()
             return
@@ -949,19 +656,13 @@ class OverlayView(QWebEngineView):
             proxy.installEventFilter(self)
             self._filtered = proxy
 
-    def _point_inside_wayland_rect(self, pos, rects=None):
-        rects = self._wayland_interactive_rects if rects is None else rects
-
-        if not rects:
+    def _point_inside_wayland_rect(self, pos):
+        rect = self._wayland_interactive_rect
+        if not rect:
             return False
-
+        x, y, w, h = rect
         px, py = pos.x(), pos.y()
-
-        for x, y, w, h in rects:
-            if x <= px <= x + w and y <= py <= y + h:
-                return True
-
-        return False
+        return x <= px <= x + w and y <= py <= y + h
 
     def eventFilter(self, obj, event):
         et = event.type()
@@ -972,31 +673,9 @@ class OverlayView(QWebEngineView):
                     pos = event.position().toPoint()
 
                     if self._point_inside_wayland_rect(pos):
-                        # The second interactive rectangle is the caption.
-                        # Its mouse events belong to the web page so the
-                        # caption's own MOVE CAPTION gesture can run. Only
-                        # presses on Raphael are promoted to host-side drag.
-                        rects = self._wayland_interactive_rects
-                        if (
-                            len(rects) > 1
-                            and self._point_inside_wayland_rect(pos, rects[1:2])
-                        ):
-                            return super().eventFilter(obj, event)
-
                         self._drag_press_pos = event.globalPosition().toPoint()
                         self._drag_offset = None
-                        self._drag_window_offset = (
-                            self._drag_press_pos - self.frameGeometry().topLeft()
-                        )
                         self._dragging = False
-                        try:
-                            self.page().runJavaScript(
-                                "window.__desktopBeginDrag "
-                                "&& window.__desktopBeginDrag(%s,%s);"
-                                % (pos.x(), pos.y())
-                            )
-                        except Exception:
-                            pass
                         return False
 
             elif et == QEvent.MouseMove:
@@ -1011,13 +690,15 @@ class OverlayView(QWebEngineView):
 
                     if not self._dragging and (dx * dx + dy * dy) >= 36:
                         self._dragging = True
-                        self._input_mask_generation += 1
 
-                        # Temporarily make the whole fullscreen surface
-                        # interactive so the pointer cannot leave the
-                        # original Raphael region while dragging.
+                        # Solo durante el arrastre necesitamos capturar
+                        # temporalmente toda la superficie para no perder
+                        # el movimiento cuando Raphael cruza el cursor.
                         self._apply_wayland_input_region(
-                            0, 0, self.width(), self.height()
+                            0,
+                            0,
+                            self.width(),
+                            self.height(),
                         )
 
                         try:
@@ -1031,25 +712,15 @@ class OverlayView(QWebEngineView):
                     if self._dragging:
                         speed = (dx * dx + dy * dy) ** 0.5
 
-                        # The Wayland surface stays fullscreen and fixed.
-                        # Convert the global cursor position to coordinates
-                        # inside that surface and let Three.js move Raphael.
+                        # El movimiento real lo hace Raphael dentro del
+                        # LayerShell de pantalla completa.
                         try:
-                            screen = self.screen() or QGuiApplication.primaryScreen()
-                            area = screen.geometry() if screen is not None else None
-                            if area is not None:
-                                local_x = current.x() - area.left()
-                                local_y = current.y() - area.top()
-                            else:
-                                local_x = current.x()
-                                local_y = current.y()
-
                             self.page().runJavaScript(
                                 "window.__desktopSetDragPosition "
                                 "&& window.__desktopSetDragPosition(%s,%s,%s,%s,%s);"
                                 % (
-                                    local_x,
-                                    local_y,
+                                    current.x(),
+                                    current.y(),
                                     dx,
                                     dy,
                                     speed,
@@ -1069,7 +740,6 @@ class OverlayView(QWebEngineView):
 
                     self._drag_press_pos = None
                     self._drag_offset = None
-                    self._drag_window_offset = None
                     self._dragging = False
 
                     if was_dragging:
@@ -1133,42 +803,6 @@ class OverlayView(QWebEngineView):
 # raises that window instead of stacking duplicates.
 _panel_procs = {}
 
-def _acquire_overlay_lock() -> bool:
-    """Allow only one Linux desktop overlay instance at a time."""
-    if os.name == "nt":
-        return True
-
-    import fcntl
-    global _overlay_lock_handle
-    try:
-        handle = open(OVERLAY_LOCK_FILE, "a+", encoding="utf-8")
-        try:
-            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            handle.close()
-            print(
-                "[overlay] another overlay instance is already running; exiting",
-                flush=True,
-            )
-            return False
-        _overlay_lock_handle = handle
-        return True
-    except OSError as exc:
-        print(f"[overlay] could not acquire overlay lock: {exc}", flush=True)
-        return False
-
-def _release_overlay_lock() -> None:
-    if _overlay_lock_handle is None:
-        return
-    try:
-        import fcntl
-        fcntl.flock(_overlay_lock_handle.fileno(), fcntl.LOCK_UN)
-    except Exception:
-        pass
-    try:
-        _overlay_lock_handle.close()
-    except Exception:
-        pass
 
 def _panel_command(section: str):
     """How to re-invoke ourselves for a panel window.
@@ -1388,31 +1022,7 @@ def main() -> int:
 
     app = QApplication(sys.argv)
 
-    # --panel is a separate process and must never claim the overlay PID
-    # file or install the overlay's SIGUSR handlers.
-    if args.panel:
-        panel = PanelView(args.panel)
-
-        def _on_panel_title(t):
-            cmd = t.strip()
-            if cmd == "GS_PANEL_CLOSE":
-                app.quit()
-            elif cmd == "GS_PANEL_MIN":
-                panel.showMinimized()
-
-        panel.titleChanged.connect(_on_panel_title)
-        url = args.url or QUrl.fromLocalFile(
-            os.path.join(HERE, "hud_prototype.html")).toString()
-        panel.load(QUrl(f"{url}?panel={args.panel}"))
-        panel.show()
-        if os.name == "nt":
-            _apply_ws_border(panel)
-        return app.exec()
-
     if os.name != "nt":
-        if not _acquire_overlay_lock():
-            return 0
-
         try:
             with open(OVERLAY_PID_FILE, "w", encoding="utf-8") as fh:
                 fh.write(str(os.getpid()))
@@ -1434,15 +1044,35 @@ def main() -> int:
                     view.hide()
         command_timer.timeout.connect(apply_command)
         command_timer.start(150)
-        def _cleanup_overlay_state():
-            try:
-                if os.path.exists(OVERLAY_PID_FILE):
-                    os.unlink(OVERLAY_PID_FILE)
-            except OSError:
-                pass
-            _release_overlay_lock()
+        app.aboutToQuit.connect(
+            lambda: os.path.exists(OVERLAY_PID_FILE) and os.unlink(OVERLAY_PID_FILE)
+        )
 
-        app.aboutToQuit.connect(_cleanup_overlay_state)
+    # --panel: a settings/history window instead of the overlay. Opaque and
+    # ordinary - it shows forms and lists, so transparency would only make
+    # them harder to read - but still frameless, with the page drawing its
+    # own title bar to match the log console.
+    if args.panel:
+        panel = PanelView(args.panel)
+
+        # Commands from the page arrive as title changes - there is no
+        # window.pywebview.api under Qt, so a title channel is the simplest
+        # bridge that needs no extra plumbing.
+        def _on_panel_title(t):
+            cmd = t.strip()
+            if cmd == "GS_PANEL_CLOSE":
+                app.quit()
+            elif cmd == "GS_PANEL_MIN":
+                panel.showMinimized()
+
+        panel.titleChanged.connect(_on_panel_title)
+        url = args.url or QUrl.fromLocalFile(
+            os.path.join(HERE, "hud_prototype.html")).toString()
+        panel.load(QUrl(f"{url}?panel={args.panel}"))
+        panel.show()
+        if os.name == "nt":
+            _apply_ws_border(panel)
+        return app.exec()
 
     view = OverlayView(args.size)
 
