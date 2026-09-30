@@ -399,6 +399,10 @@ class OverlayView(QWebEngineView):
         height = max(1, min(int(height), h - y))
 
         self._wayland_interactive_rects = [(x, y, width, height)]
+        try:
+            self.setMask(QRegion(int(x), int(y), int(width), int(height)))
+        except Exception as exc:
+            print(f"[overlay] Wayland QWindow mask failed: {exc}", flush=True)
 
         try:
             result = self._wayland_input.gs_set_input_region(
@@ -449,6 +453,16 @@ class OverlayView(QWebEngineView):
                 continue
 
         self._wayland_interactive_rects = clean_rects
+        # QWindow.setMask() is Qt's Wayland-native input-region path.
+        # Keep it authoritative; the optional wl_surface bridge can be
+        # overwritten by a later Qt surface commit.
+        try:
+            region = QRegion()
+            for rx, ry, rw, rh in clean_rects:
+                region = region.united(QRegion(int(rx), int(ry), int(rw), int(rh)))
+            self.setMask(region)
+        except Exception as exc:
+            print(f"[overlay] Wayland QWindow mask failed: {exc}", flush=True)
         print(
             f"[overlay] INPUT REGION rects={clean_rects} "
             f"surface={w}x{h}",
