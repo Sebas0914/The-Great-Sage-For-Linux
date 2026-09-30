@@ -39,14 +39,20 @@ class LinuxWaylandLauncher(AppLauncher):
         for root in roots:
             if not root.is_dir():
                 continue
-            for desktop in root.glob("*.desktop"):
+            for desktop in root.rglob("*.desktop"):
                 try:
                     text = desktop.read_text(encoding="utf-8", errors="replace")
                 except OSError:
                     continue
                 name = None
                 hidden = no_display = False
+                in_desktop_entry = False
                 for line in text.splitlines():
+                    if line.startswith("["):
+                        in_desktop_entry = line == "[Desktop Entry]"
+                        continue
+                    if not in_desktop_entry:
+                        continue
                     if line.startswith("Name="):
                         name = line[5:].strip()
                     elif line == "Hidden=true":
@@ -64,7 +70,24 @@ class LinuxWaylandLauncher(AppLauncher):
         apps = self._desktop_apps()
         desktop = apps.get(query)
         if not desktop:
-            matches = [(k, p) for k, p in apps.items() if query in k]
+            # Linux users often say Word/Excel/PowerPoint for the
+            # compatible LibreOffice application installed on the machine.
+            office_aliases = {
+                "word": ("libreoffice writer", "writer"),
+                "microsoft word": ("libreoffice writer", "writer"),
+                "excel": ("libreoffice calc", "calc"),
+                "microsoft excel": ("libreoffice calc", "calc"),
+                "powerpoint": ("libreoffice impress", "impress"),
+                "microsoft powerpoint": ("libreoffice impress", "impress"),
+            }
+            matches = []
+            if query in office_aliases:
+                for alias in office_aliases[query]:
+                    matches = [(k, p) for k, p in apps.items() if alias in k]
+                    if matches:
+                        break
+            if not matches:
+                matches = [(k, p) for k, p in apps.items() if query in k]
             if not matches:
                 raise RuntimeError(f"No installed application matches {name!r}.")
             _, desktop = sorted(matches, key=lambda x: len(x[0]))[0]

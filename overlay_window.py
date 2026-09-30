@@ -46,6 +46,35 @@ import ctypes
 import os
 import signal
 import sys
+import importlib.util
+
+# A normal Qt Wayland surface cannot stay above other applications. The
+# layer-shell backend is required for Raphael's overlay role. PySide's
+# bundled Qt omits KDE's layer-shell plugin, so add the system integration
+# directory while keeping the bundled plugins first (their ABI matches
+# this PySide build).
+if (sys.platform.startswith("linux")
+        and os.environ.get("XDG_SESSION_TYPE", "").lower() == "wayland"):
+    os.environ["QT_WAYLAND_SHELL_INTEGRATION"] = "layer-shell"
+    plugin_roots = []
+    spec = importlib.util.find_spec("PySide6")
+    if spec and spec.origin:
+        bundled_plugins = os.path.join(
+            os.path.dirname(spec.origin), "Qt", "plugins"
+        )
+        if os.path.isdir(bundled_plugins):
+            plugin_roots.append(bundled_plugins)
+    for root in (
+        "/usr/lib/x86_64-linux-gnu/qt6/plugins",
+        "/usr/lib/aarch64-linux-gnu/qt6/plugins",
+        "/usr/lib/qt6/plugins",
+    ):
+        if os.path.isfile(os.path.join(
+                root, "wayland-shell-integration", "liblayer-shell.so")):
+            plugin_roots.append(root)
+    plugin_roots.extend(filter(None, os.environ.get("QT_PLUGIN_PATH", "").split(os.pathsep)))
+    if plugin_roots:
+        os.environ["QT_PLUGIN_PATH"] = os.pathsep.join(dict.fromkeys(plugin_roots))
 
 from PySide6.QtCore import QEvent, QPoint, Qt, QTimer, QUrl
 from PySide6.QtGui import QColor, QRegion, QCursor, QGuiApplication, QSurfaceFormat
@@ -87,6 +116,10 @@ OPEN_PANEL_PREFIX = "GS_OPEN_PANEL:"
 # Panel windows are ordinary opaque windows - they show forms and lists,
 # not a floating visual, so transparency would only hurt readability.
 PANEL_SIZE = (560, 640)
+# Minimum panel size
+PANEL_MIN_SIZE = (400, 300)
+# Resize handle size (bottom-right corner)
+RESIZE_HANDLE_SIZE = 16
 
 # Tight to the corner. The overlay is meant to tuck out of the way, and
 # 24px read as floating loose beside the edge.
@@ -223,11 +256,13 @@ class OverlayView(QWebEngineView):
         # The three settings that make it genuinely see-through. All are
         # required: dropping any one leaves an opaque window.
         self.setAttribute(Qt.WA_TranslucentBackground, True)
-        flags = (
-            Qt.FramelessWindowHint
-            | Qt.WindowStaysOnTopHint
-            | Qt.Tool
-        )
+        flags = Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint
+        # Qt.Tool windows are grouped with their owning app on some Wayland
+        # compositors. Activating another app can then lower the tool surface
+        # even though the layer-shell role is set. Keep a normal top-level
+        # surface on Wayland; the overlay layer controls its global stacking.
+        if not WAYLAND_SESSION:
+            flags |= Qt.Tool
         if WAYLAND_SESSION:
             flags |= Qt.WindowDoesNotAcceptFocus
         self.setWindowFlags(flags)
@@ -240,13 +275,17 @@ class OverlayView(QWebEngineView):
         self.setAttribute(Qt.WA_NoSystemBackground, True)
         self.setAttribute(Qt.WA_OpaquePaintEvent, False)
 
-        # En Wayland la superficie LayerShell debe ser SOLO del tamaño del
-        # overlay. Una superficie fullscreen puede hacer que QWebEngine/Chromium
-        # pinte el fondo transparente como negro y bloquee todo el escritorio.
-        # El compositor mantiene esta superficie por encima de las ventanas
-        # normales; Raphael sigue siendo el contenido de este cuadrado.
-        self.resize(size, size)
-        effective_size = size
+        # A desktop overlay needs the whole output as its coordinate space:
+        # Raphael and captions are positioned independently within it. The
+        # Wayland input region below leaves the rest of the desktop clickable.
+        screen = QGuiApplication.primaryScreen()
+        self._fullscreen_surface = bool(WAYLAND_SESSION and screen)
+        if self._fullscreen_surface:
+            self.setGeometry(screen.geometry())
+            effective_size = min(self.width(), self.height())
+        else:
+            self.resize(size, size)
+            effective_size = size
 
         self._filtered = None
         self._wayland_layer = False
@@ -307,18 +346,15 @@ class OverlayView(QWebEngineView):
         if not WAYLAND_SESSION:
             return
         try:
-            if self._wayland_layer and self._wayland_layer_lib and self._wayland_window_ptr:
-                self._wayland_layer_lib.gs_configure_layer(
-                    self._wayland_window_ptr,
-                    int(self.width()),
-                    int(self.height()),
-                    int(MARGIN),
-                    int(MARGIN),
-                )
-            elif self.isVisible():
-                # Fallback path: Qt cannot guarantee stacking on Wayland,
-                # but raising the tool window is still useful when the
-                # LayerShell bridge is unavailable.
+            # Configure LayerShellQt only once, before first show. Re-running
+            # get()/setLayer on a live surface makes LayerShellQt warn that
+            # the QWindow already owns an integration and can desynchronize
+            # the surface from the compositor. The configured overlay layer
+            # itself stays above regular app windows; here we only recover a
+            # hidden widget and refresh Qt's local order without activation.
+            if self._ready_visible and not self._explicit_hide_requested:
+                if not self.isVisible():
+                    self.show()
                 self.raise_()
         except Exception as exc:
             print(f"[overlay] Wayland top-layer reassert failed: {exc}", flush=True)
@@ -734,8 +770,8 @@ class OverlayView(QWebEngineView):
                     ptr,
                     int(self.width()),
                     int(self.height()),
-                    int(MARGIN),
-                    int(MARGIN),
+                    0,
+                    0,
                 )
             )
             ok = result == 0
@@ -1216,11 +1252,14 @@ class PanelView(QWebEngineView):
 
     def __init__(self, section: str):
         super().__init__()
+        self.section = section
         self.setWindowFlags(Qt.FramelessWindowHint)
-        self.resize(*PANEL_SIZE)
-        self.setWindowTitle(f"Great Sage - {section}")
         self._drag_from = None
+        self._resize_from = None
         self._filtered = None
+        # Load saved size/position
+        self._load_geometry()
+        self.setWindowTitle(f"Great Sage - {section}")
         # Same reasoning as the overlay: QWebEngineView never receives
         # mouse events itself - they go to an internal render widget - so
         # the page's .pywebview-drag-region did nothing here, and there is
@@ -1228,39 +1267,84 @@ class PanelView(QWebEngineView):
         # bar could not be dragged.
         self.loadFinished.connect(lambda _ok: self._install_mouse_filter())
 
-    def showEvent(self, event):
-        # The render widget may not exist yet when the page finishes
-        # loading, and installing on a proxy that is not there yet is a
-        # silent no-op - which leaves the title bar dead with nothing to
-        # show why. The overlay installs twice for the same reason.
-        super().showEvent(event)
-        self._install_mouse_filter()
-        QTimer.singleShot(0, self._install_mouse_filter)
+    def _load_geometry(self):
+        """Load saved window size and position from hud_settings.json."""
+        try:
+            from great_sage.core import hud_settings
+            from great_sage.config import settings
+            saved = hud_settings.load(settings.HUD_SETTINGS_PATH)
+            panel_geom = saved.get("panel_geometry", {}).get(self.section)
+            if panel_geom:
+                x = panel_geom.get("x")
+                y = panel_geom.get("y")
+                w = panel_geom.get("width")
+                h = panel_geom.get("height")
+                if all(v is not None for v in (x, y, w, h)):
+                    self.setGeometry(x, y, w, h)
+                    return
+        except Exception:
+            pass
+        # Default size
+        self.resize(*PANEL_SIZE)
 
-    def _install_mouse_filter(self):
-        proxy = self.focusProxy()
-        if proxy is not None and proxy is not self._filtered:
-            proxy.installEventFilter(self)
-            self._filtered = proxy
+    def _save_geometry(self):
+        """Save window size and position to hud_settings.json."""
+        try:
+            from great_sage.core import hud_settings
+            from great_sage.config import settings
+            saved = hud_settings.load(settings.HUD_SETTINGS_PATH)
+            geom = saved.get("panel_geometry", {})
+            geom[self.section] = {
+                "x": self.x(),
+                "y": self.y(),
+                "width": self.width(),
+                "height": self.height(),
+            }
+            saved["panel_geometry"] = geom
+            hud_settings.save(settings.HUD_SETTINGS_PATH, saved)
+        except Exception:
+            pass
 
     def _in_bar(self, pos) -> bool:
         return (pos.y() <= PANEL_BAR_H
                 and pos.x() <= self.width() - PANEL_BUTTONS_W)
 
+    def _in_resize_handle(self, pos) -> bool:
+        """Check if position is in the bottom-right resize handle."""
+        return (pos.x() >= self.width() - RESIZE_HANDLE_SIZE and
+                pos.y() >= self.height() - RESIZE_HANDLE_SIZE)
+
     def eventFilter(self, obj, event):
         et = event.type()
         if et == QEvent.MouseButtonPress:
-            if (event.button() == Qt.LeftButton
-                    and self._in_bar(event.position())):
-                self._drag_from = (event.globalPosition().toPoint()
-                                   - self.frameGeometry().topLeft())
-                return True      # swallow, or the page reacts to it too
+            if event.button() == Qt.LeftButton:
+                if self._in_bar(event.position()):
+                    self._drag_from = (event.globalPosition().toPoint()
+                                       - self.frameGeometry().topLeft())
+                    return True
+                elif self._in_resize_handle(event.position()):
+                    self._resize_from = event.globalPosition().toPoint()
+                    return True
         elif et == QEvent.MouseMove:
             if self._drag_from is not None and (event.buttons() & Qt.LeftButton):
                 self.move(event.globalPosition().toPoint() - self._drag_from)
                 return True
+            elif self._resize_from is not None and (event.buttons() & Qt.LeftButton):
+                current = event.globalPosition().toPoint()
+                dx = current.x() - self._resize_from.x()
+                dy = current.y() - self._resize_from.y()
+                new_w = max(PANEL_MIN_SIZE[0], self.width() + dx)
+                new_h = max(PANEL_MIN_SIZE[1], self.height() + dy)
+                self.resize(new_w, new_h)
+                self._resize_from = current
+                return True
         elif et in (QEvent.MouseButtonRelease, QEvent.Leave):
-            self._drag_from = None
+            if self._drag_from is not None:
+                self._drag_from = None
+                self._save_geometry()
+            if self._resize_from is not None:
+                self._resize_from = None
+                self._save_geometry()
         return super().eventFilter(obj, event)
 
 
@@ -1399,6 +1483,11 @@ def main() -> int:
                 app.quit()
             elif cmd == "GS_PANEL_MIN":
                 panel.showMinimized()
+            elif cmd == "GS_PANEL_MAX":
+                if panel.isMaximized():
+                    panel.showNormal()
+                else:
+                    panel.showMaximized()
 
         panel.titleChanged.connect(_on_panel_title)
         url = args.url or QUrl.fromLocalFile(
@@ -1448,6 +1537,12 @@ def main() -> int:
 
     if WAYLAND_SESSION:
         view._configure_wayland_layer()
+        # A layer-shell surface is the actual Wayland always-on-top
+        # guarantee. Reassert immediately when another app is activated;
+        # the periodic timer remains a recovery path for compositor quirks.
+        app.applicationStateChanged.connect(
+            lambda _state: QTimer.singleShot(0, view._reassert_wayland_overlay)
+        )
 
     url = args.url or QUrl.fromLocalFile(
         os.path.join(HERE, "hud_prototype.html")).toString()

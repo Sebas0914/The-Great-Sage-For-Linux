@@ -55,15 +55,16 @@
     visibility: hidden !important;
     opacity: 0 !important;
     position: fixed;
-    left: 25%;
+    left: 50%;
     right: auto;
     bottom: 6%;
     top: auto;
-    width: 50%;
-    max-width: 50%;
+    width: max-content;
+    max-width: min(72vw, 900px);
+    min-width: 0;
     max-height: 30vh;
     box-sizing: border-box;
-    transform: none;
+    transform: translateX(-50%);
     padding: 8px 14px;
     font-size: 14px;
     line-height: 1.3;
@@ -84,8 +85,9 @@
   body.desktop-raphael #caption-box.dragging { cursor: grabbing; }
   body.desktop-raphael #caption-box .caption-close-btn { display: none; }
   body.desktop-raphael #caption-text {
-    height: calc(5 * 1.3em + 2px);
-    max-height: calc(5 * 1.3em + 2px);
+    height: auto;
+    max-height: calc(5 * 1.3em);
+    min-height: 0;
     overflow: hidden;
     overflow-x: hidden;
     white-space: pre-wrap;
@@ -610,8 +612,8 @@
   .wheel-item {
     position: absolute; top: 0; left: 0;
     transform: translate(-50%, -50%) scale(0.4);
-    width: calc(76px * var(--wheel-ui-scale, 1));
-    height: calc(76px * var(--wheel-ui-scale, 1));
+    width: calc(64px * var(--wheel-ui-scale, 1));
+    height: calc(64px * var(--wheel-ui-scale, 1));
     cursor: pointer;
     opacity: 0;
     transition: opacity 300ms ease, transform 300ms ease;
@@ -1328,6 +1330,7 @@
   z-index: 120;
 }
 body.mini #win-controls { display: none; }
+body.panel-window #win-controls { display: none; }
 
 #win-controls button {
   width: 46px; height: 32px;
@@ -1490,6 +1493,20 @@ body.panel-window #panel-window-chrome { display: flex; }
 }
 #panel-window-buttons button:hover { background: #1a1a1a; }
 #panel-win-close:hover { background: #c9302c !important; border-color: #e06a66 !important; }
+#panel-win-max:hover { background: #1a1a1a; }
+
+/* Bottom-right resize handle for panel window */
+#panel-resize-handle {
+  position: absolute;
+  right: 4px; bottom: 4px;
+  width: 16px; height: 16px;
+  cursor: se-resize;
+  background: linear-gradient(135deg, transparent 50%, rgba(255,255,255,0.2) 50%);
+  background-size: 4px 4px;
+  opacity: 0.5;
+  pointer-events: none; /* Let host handle resize */
+  z-index: 10;
+}
 
 /* ---------------- Panels inside the overlay ----------------
    SETTINGS / HISTORY open the same #center-panel the full-size HUD uses.
@@ -1758,8 +1775,11 @@ body.mini.pet-state-confused #canvas-wrap { animation: gs-pet-confused 720ms eas
   <span id="panel-window-title">GREAT SAGE</span>
   <div id="panel-window-buttons">
     <button id="panel-win-min" title="Minimise">&#8211;</button>
+    <button id="panel-win-max" title="Maximise">&#9744;</button>
     <button id="panel-win-close" title="Close">&#10005;</button>
   </div>
+  <!-- Bottom-right resize handle -->
+  <div id="panel-resize-handle" title="Resize"></div>
 </div>
 
 <div id="mini-drag-handle" class="mini-keep" title="Drag to move">
@@ -1972,6 +1992,11 @@ body.mini.pet-state-confused #canvas-wrap { animation: gs-pet-confused 720ms eas
               <span class="ai-set-hint">Local uses Ollama and needs no key.</span>
             </div>
 
+            <div class="ai-set-group">
+              <label>NVIDIA API key</label>
+              <input id="ai-key-nvidia" type="password" autocomplete="off"
+                     placeholder="not set">
+            </div>
             <div class="ai-set-group">
               <label>Anthropic API key</label>
               <input id="ai-key-anthropic" type="password" autocomplete="off"
@@ -2377,6 +2402,47 @@ Hey Ciel</textarea>
         Play recorded sound clips for trigger phrases (off = always live TTS)
       </label>
       <div id="voice-lines-list" style="opacity:0.6;">(waiting for AI connection...)</div>
+
+      <hr class="panel-divider">
+
+      <h4>PERSONALIDAD Y MEMORIA</h4>
+      <div style="opacity:0.65; font-size:11px; margin-bottom:10px;">
+        Responde estas preguntas para que Gran Sabio te conozca mejor y adapte
+        su forma de hablar, intereses y tono. Las respuestas se guardan
+        localmente en tu carpeta de datos (no en GitHub).
+      </div>
+      <label>
+        <input type="checkbox" id="persona-use-name-toggle">
+        Usar mi nombre al hablarme
+      </label>
+      <div class="persona-question">
+        <label class="slider-label">Tu nombre / apodo</label>
+        <input type="text" id="persona-name-input" placeholder="Ej: Sebas, Maestro, Capitán...">
+      </div>
+      <div class="persona-question">
+        <label class="slider-label">Intereses y aficiones (separados por comas)</label>
+        <textarea id="persona-interests-input" rows="2" placeholder="Ej: programación, videojuegos, anime, lectura, música..."></textarea>
+      </div>
+      <div class="persona-question">
+        <label class="slider-label">Personalidad (palabras clave)</label>
+        <textarea id="persona-traits-input" rows="2" placeholder="Ej: curioso, analítico, sarcástico, paciente, creativo..."></textarea>
+      </div>
+      <div class="persona-question">
+        <label class="slider-label">Tono preferido de Gran Sabio</label>
+        <select id="persona-tone-select">
+          <option value="casual">Casual y relajado</option>
+          <option value="formal">Formal y preciso</option>
+          <option value="amigable">Amigable y cercano</option>
+          <option value="tecnico">Técnico y directo</option>
+        </select>
+      </div>
+      <div class="persona-question">
+        <label class="slider-label">Qué NO te gusta / evitar temas</label>
+        <textarea id="persona-dislikes-input" rows="2" placeholder="Ej: explicaciones muy largas, jerga innecesaria, formalidad excesiva..."></textarea>
+      </div>
+      <button id="persona-save-btn" class="settings-btn" type="button">GUARDAR PERFIL</button>
+      <div id="persona-save-status" style="opacity:0.6; font-size:11px; margin-top:4px;"></div>
+
     </section>
     </div>
     </div>
@@ -4368,32 +4434,127 @@ Hey Ciel</textarea>
   let desktopMood = 'CALM';
   let desktopMoodWas = '';
   let desktopHovered = false;
+  let desktopWheelHovered = false;
 
   // Controlled presence animation: mood changes are discrete events, not
-  // a constantly changing colour wheel. Raphael reacts briefly, then settles.
+  // a constantly changing colour wheel. Each mood remains until the next one.
   let desktopPresenceScale = 1.0;
   let desktopPresenceTargetScale = 1.0;
-  let desktopPresenceColorTimer = null;
   let desktopSpeechPulseSeen = false;
+  let desktopEmotionLevel = 0;
+  let desktopEmotionMood = 'CALM';
+  let desktopEmotionRate = 0.35;
+  let desktopEmotionActiveUntil = 0;
+  let desktopThinkingHoldUntil = 0;
+  let desktopEmotionCanSpeak = false;
+  let desktopEmotionSpoke = false;
+  let desktopEmotionApplied = null;
+  let desktopEmotionApplyAt = 0;
 
   const desktopMoodColors = {
     CALM: '#b9d9ff', THINKING: '#b7a7ff', LISTENING: '#9fdcff',
     SPEAKING: '#a8d8ff', FOCUSED: '#9fbfff', CURIOUS: '#a8e8e2',
-    HAPPY: '#e8d49c', CONFUSED: '#c8b8e8', ANNOYED: '#d8a0a8',
+    HAPPY: '#ffb83f', CONFUSED: '#b66dff', ANNOYED: '#d94f62',
   };
 
   function triggerDesktopPresence(mood, scale = 1.045) {
     if (!DESKTOP_RAPHAEL_MODE) return;
     desktopPresenceTargetScale = scale;
+    // Neutral is the start of the release, not a new instantaneous mood.
+    if (mood === 'CALM' && desktopEmotionLevel > 0) return;
+    registerDesktopEmotion(mood, 0.9, 850);
+  }
+
+  let desktopThoughtTimer = null;
+  let desktopCircleTrack = { item: null, x: 0, y: 0, angle: 0, travel: 0, turns: 0 };
+  function showDesktopThought(message) {
+    if (!DESKTOP_RAPHAEL_MODE) return;
+    let bubble = document.getElementById('desktop-gesture-thought');
+    if (!bubble) {
+      bubble = document.createElement('div');
+      bubble.id = 'desktop-gesture-thought';
+      Object.assign(bubble.style, {
+        position: 'fixed', left: '50%', bottom: '14%', transform: 'translateX(-50%)',
+        zIndex: '10001', maxWidth: 'min(80vw, 520px)', padding: '9px 16px',
+        color: '#fff', background: 'rgba(24, 25, 30, .94)',
+        border: '1px solid rgba(190, 170, 255, .55)', borderRadius: '12px',
+        font: '14px/1.4 sans-serif', textAlign: 'center', opacity: '0',
+        transition: 'opacity 140ms ease', pointerEvents: 'none'
+      });
+      document.body.appendChild(bubble);
+    }
+    bubble.textContent = message;
+    bubble.style.opacity = '1';
+    clearTimeout(desktopThoughtTimer);
+    desktopThoughtTimer = setTimeout(() => { bubble.style.opacity = '0'; }, 2100);
+  }
+
+  function desktopThinkingReaction(message) {
+    desktopEmotionMessages.THINKING = message;
+    desktopThinkingHoldUntil = performance.now() + 1450;
+    registerDesktopEmotion('THINKING', 0.95, 1000, true);
+  }
+
+  const desktopEmotionMessages = {
+    HAPPY: 'Me gusta ese gesto. ¿Qué hacemos ahora?',
+    CONFUSED: 'Ese movimiento me deja pensando…',
+    ANNOYED: 'Ya entendí; no hace falta sacudirme tanto.',
+    THINKING: 'Interesante movimiento. Déjame pensarlo.',
+    CALM: ''
+  };
+
+  function registerDesktopEmotion(mood, rate = 0.35, holdMs = 180, canSpeak = false) {
+    const now = performance.now();
+    if (mood !== desktopEmotionMood) {
+      desktopEmotionMood = mood;
+      desktopEmotionCanSpeak = false;
+    }
+    if (canSpeak) desktopEmotionCanSpeak = true;
+    desktopEmotionRate = Math.max(desktopEmotionRate, rate);
+    desktopEmotionActiveUntil = now + holdMs;
+  }
+
+  function updateDesktopEmotion(dt) {
+    const now = performance.now();
+    if (desktopWheelHovered) desktopEmotionCanSpeak = true;
+    if (desktopWheelHovered && now >= desktopEmotionActiveUntil && now >= desktopThinkingHoldUntil) {
+      if (desktopEmotionMood !== 'HAPPY') {
+        desktopEmotionMood = 'HAPPY';
+      }
+      desktopEmotionLevel = Math.min(1, desktopEmotionLevel + dt * 0.82);
+    } else if (now < desktopEmotionActiveUntil) {
+      desktopEmotionLevel = Math.min(1, desktopEmotionLevel + dt * desktopEmotionRate);
+    } else {
+      desktopEmotionLevel = Math.max(0, desktopEmotionLevel - dt * 0.27);
+      desktopEmotionRate = 0.35;
+    }
+
+    if (desktopEmotionLevel >= 0.58 && desktopEmotionCanSpeak && !desktopEmotionSpoke) {
+      desktopEmotionSpoke = true;
+      showDesktopThought(desktopEmotionMessages[desktopEmotionMood] || 'Déjame pensar en eso.');
+    }
+    if (desktopEmotionLevel <= 0.02) {
+      desktopEmotionLevel = 0;
+      desktopEmotionMood = 'CALM';
+      desktopEmotionSpoke = false;
+      desktopEmotionCanSpeak = false;
+    }
+
+    const progress = Math.max(0, Math.min(1, (desktopEmotionLevel - 0.08) / 0.48));
+    const eased = progress * progress * (3 - 2 * progress);
+    const strength = eased * (desktopEmotionMood === 'ANNOYED' ? 0.84 : 0.80);
     const base = new THREE.Color(colorPicker.value || '#ffffff');
-    const accent = new THREE.Color(desktopMoodColors[mood] || desktopMoodColors.CALM);
-    base.lerp(accent, 0.22);
-    applyThemeColor('#' + base.getHexString());
-    clearTimeout(desktopPresenceColorTimer);
-    desktopPresenceColorTimer = setTimeout(() => {
-      desktopPresenceTargetScale = 1.0;
-      applyThemeColor(colorPicker.value || '#ffffff');
-    }, 1800);
+    const accent = new THREE.Color(desktopMoodColors[desktopEmotionMood] || desktopMoodColors.CALM);
+    const target = base.lerp(accent, strength);
+
+    // A throttled material pass gives a smooth tint without recolouring
+    // the full Three.js scene on every animation frame.
+    if (now >= desktopEmotionApplyAt) {
+      if (!desktopEmotionApplied) desktopEmotionApplied = target.clone();
+      else desktopEmotionApplied.lerp(target, 0.22);
+      applyThemeColor('#' + desktopEmotionApplied.getHexString());
+      desktopEmotionApplyAt = now + 40;
+    }
   }
 
   function desktopTargetHitsSubtitle(xPct, yPct) {
@@ -4445,6 +4606,13 @@ Hey Ciel</textarea>
 
   function updateDesktopMoodTarget() {
     if (!DESKTOP_RAPHAEL_MODE || desktopDragOverride) return;
+    if (desktopWheelHovered) {
+      if (desktopMood !== 'HAPPY') {
+        desktopMood = 'HAPPY';
+        triggerDesktopPresence('HAPPY', 1.05);
+      }
+      return;
+    }
 
     let mood = 'CALM';
     if (pttActive) mood = 'LISTENING';
@@ -4609,7 +4777,9 @@ Hey Ciel</textarea>
       );
     }
 
-    const speed = Math.max(0, Number(speedPx) || 0);
+    // Qt supplies displacement per pointer event; normalize approximately
+    // to pixels per second so thresholds are stable across polling rates.
+    const speed = Math.max(0, Number(speedPx) || 0) * 60;
     const dx = Number(dxPx) || 0;
     const dy = Number(dyPx) || 0;
 
@@ -4617,8 +4787,8 @@ Hey Ciel</textarea>
       Math.hypot(desktopLastDragDx, desktopLastDragDy);
 
     const reversing =
-      previousMagnitude > 40 &&
-      Math.hypot(dx, dy) > 40 &&
+      previousMagnitude > 8 &&
+      Math.hypot(dx, dy) > 8 &&
       ((dx * desktopLastDragDx) + (dy * desktopLastDragDy)) < 0;
 
     if (speed > 1100 && reversing) {
@@ -4652,13 +4822,11 @@ Hey Ciel</textarea>
       mood = 'CONFUSED';
     }
 
-    if (desktopMood !== mood) {
-      desktopMood = mood;
-      triggerDesktopPresence(
-        mood,
-        mood === 'ANNOYED' ? 1.085 : 1.065
-      );
-    }
+    desktopMood = mood;
+    const emotionRate = mood === 'ANNOYED' ? 0.75
+      : mood === 'CONFUSED' ? 0.48 : 0.30;
+    desktopPresenceTargetScale = mood === 'ANNOYED' ? 1.085 : 1.065;
+    registerDesktopEmotion(mood, emotionRate, 220, true);
 
     updateDesktopTaskPanel();
   };
@@ -4675,6 +4843,7 @@ Hey Ciel</textarea>
       desktopShakeScore = 0;
       if (!desktopHovered && !aiThinking && !speechInProgress && !pttActive) {
         desktopMood = 'CALM';
+        triggerDesktopPresence('CALM', 1.0);
       }
     }
   };
@@ -4693,11 +4862,13 @@ Hey Ciel</textarea>
     } else if (
       !hovered &&
       !desktopDragOverride &&
+      !desktopWheelHovered &&
       !aiThinking &&
       !speechInProgress &&
       !pttActive
     ) {
       desktopMood = 'CALM';
+      triggerDesktopPresence('CALM', 1.0);
     }
 
     updateDesktopTaskPanel();
@@ -4705,10 +4876,41 @@ Hey Ciel</textarea>
 
   window.addEventListener('pointermove', (e) => {
     if (!DESKTOP_RAPHAEL_MODE) return;
+    const wheelItem = e.target && e.target.closest ? e.target.closest('.wheel-item') : null;
+    desktopWheelHovered = !!wheelItem;
+    if (wheelItem) {
+      if (!desktopDragOverride && desktopMood !== 'HAPPY') {
+        desktopMood = 'HAPPY';
+        triggerDesktopPresence('HAPPY', 1.05);
+      }
+      const itemRect = wheelItem.getBoundingClientRect();
+      const angle = Math.atan2(e.clientY - (itemRect.top + itemRect.height / 2), e.clientX - (itemRect.left + itemRect.width / 2));
+      if (desktopCircleTrack.item !== wheelItem) {
+        desktopCircleTrack = { item: wheelItem, x: e.clientX, y: e.clientY, angle, travel: 0, turns: 0 };
+      } else {
+        desktopCircleTrack.travel += Math.hypot(e.clientX - desktopCircleTrack.x, e.clientY - desktopCircleTrack.y);
+        const delta = Math.atan2(Math.sin(angle - desktopCircleTrack.angle), Math.cos(angle - desktopCircleTrack.angle));
+        desktopCircleTrack.turns += delta;
+        desktopCircleTrack.x = e.clientX;
+        desktopCircleTrack.y = e.clientY;
+        desktopCircleTrack.angle = angle;
+        if (desktopCircleTrack.travel > 100 && Math.abs(desktopCircleTrack.turns) > Math.PI * 1.65) {
+          desktopThinkingReaction('Interesante movimiento. Déjame pensarlo.');
+          desktopCircleTrack.travel = 0;
+          desktopCircleTrack.turns = 0;
+        }
+      }
+    } else {
+      desktopCircleTrack = { item: null, x: e.clientX, y: e.clientY, angle: 0, travel: 0, turns: 0 };
+    }
     const core = coreScreenPosition();
     const radius = Math.max(72, coreScreenRadius(3.5) * 0.72);
     const dx = e.clientX - core.x, dy = e.clientY - core.y;
     setDesktopHover((dx * dx + dy * dy) <= radius * radius);
+  });
+  window.addEventListener('pointerleave', () => {
+    desktopWheelHovered = false;
+    desktopCircleTrack = { item: null, x: 0, y: 0, angle: 0, travel: 0, turns: 0 };
   });
 
   function applyMiniMode(on) {
@@ -5188,6 +5390,16 @@ const MINI_CHAT_PAD = 3;
     box.classList.add('show');
     box.style.setProperty('opacity', '1', 'important');
     box.style.setProperty('visibility', 'visible', 'important');
+    // A caption position saved from the regular HUD can leave an inline
+    // pixel offset on this desktop overlay, overriding the CSS centering.
+    // Re-anchor every update so changing subtitle width stays centered.
+    if (DESKTOP_RAPHAEL_MODE) {
+      box.style.left = '50%';
+      box.style.right = 'auto';
+      box.style.top = 'auto';
+      box.style.bottom = '6%';
+      box.style.transform = 'translateX(-50%)';
+    }
     el.textContent = text;
     if (DESKTOP_RAPHAEL_MODE) setDesktopTarget(desktopTarget.x, desktopTarget.y);
     // Desktop CSS owns the box dimensions. Do not replace its max-height
@@ -5834,6 +6046,7 @@ const MINI_CHAT_PAD = 3;
   let desktopSubtitleTimer = null;
   let desktopSubtitleHideTimer = null;
   let desktopSubtitleHideDelayTimer = null;
+  let desktopSubtitleAudioStarted = false;
 
   // Raphael subtitles are text-only: remove emoji/symbol presentation so
   // the Spanish caption stays clean and predictable.
@@ -5853,6 +6066,39 @@ const MINI_CHAT_PAD = 3;
     if (!el) return;
     el.textContent = text;
     el.scrollTop = el.scrollHeight;
+  }
+
+  function clearDesktopSubtitleBox() {
+    const box = document.getElementById('caption-box');
+    const el = document.getElementById('caption-text');
+    if (box) {
+      box.classList.remove('show');
+      // showDesktopSubtitle writes these as inline !important overrides for
+      // the desktop overlay. Removing .show alone cannot hide the box while
+      // those overrides remain, which left an empty background on screen.
+      box.style.removeProperty('opacity');
+      box.style.removeProperty('visibility');
+      // Force complete hide: caption-disabled has display: none which beats
+      // the desktop-raphael rule's visibility/opacity. This prevents a
+      // lingering gray rectangle from the box's padding/background.
+      box.classList.add('caption-disabled');
+    }
+    if (el) {
+      el.textContent = '';
+      el.scrollTop = 0;
+    }
+  }
+
+  function resetDesktopSubtitlePlacement() {
+    if (!DESKTOP_RAPHAEL_MODE) return;
+    const box = document.getElementById('caption-box');
+    if (!box) return;
+    // Caption move mode stores its drag coordinates as inline styles. Those
+    // coordinates override the desktop rule (left:50% + translateX(-50%))
+    // and leave the subtitle visibly off-centre after a drag or mode switch.
+    for (const property of ['left', 'right', 'top', 'bottom', 'transform']) {
+      box.style.removeProperty(property);
+    }
   }
 
   function showDesktopSubtitle(text) {
@@ -5903,6 +6149,7 @@ const MINI_CHAT_PAD = 3;
 
   function setDesktopSubtitleSource(text) {
     if (!DESKTOP_RAPHAEL_MODE) return;
+    resetDesktopSubtitlePlacement();
     if (desktopSubtitleHideTimer) {
       clearInterval(desktopSubtitleHideTimer);
       desktopSubtitleHideTimer = null;
@@ -5915,17 +6162,11 @@ const MINI_CHAT_PAD = 3;
     desktopSubtitleSource = cleanDesktopSubtitleText(text);
     desktopSubtitleShown = '';
     desktopSubtitleQueue = '';
-    const box = document.getElementById('caption-box');
-    const el = document.getElementById('caption-text');
-
-    if (box) box.classList.remove('show');
-    if (el) {
-      el.textContent = '';
-      el.scrollTop = 0;
-    }
+    desktopSubtitleAudioStarted = false;
+    clearDesktopSubtitleBox();
   }
 
-  function finishDesktopSubtitle() {
+  function finishDesktopSubtitle(readDelayMs = 1200) {
     if (!DESKTOP_RAPHAEL_MODE) return;
 
     if (desktopSubtitleTimer) {
@@ -5946,7 +6187,7 @@ const MINI_CHAT_PAD = 3;
       desktopSubtitleShown = '';
       desktopSubtitleQueue = '';
       desktopSubtitleSource = '';
-      if (box) box.classList.remove('show');
+      clearDesktopSubtitleBox();
       return;
     }
 
@@ -5961,14 +6202,14 @@ const MINI_CHAT_PAD = 3;
           desktopSubtitleHideTimer = null;
           desktopSubtitleQueue = '';
           desktopSubtitleSource = '';
-          if (box) box.classList.remove('show');
+          clearDesktopSubtitleBox();
           return;
         }
 
         desktopSubtitleShown = desktopSubtitleShown.slice(1);
         renderDesktopSubtitleWindow(desktopSubtitleShown);
       }, 30);
-    }, 1200);
+    }, readDelayMs);
   }
 
   let currentServerAudioUrl = null;
@@ -6052,6 +6293,7 @@ const MINI_CHAT_PAD = 3;
       fallback.preload = 'auto';
       fallback.onplay = () => {
         if (!DESKTOP_RAPHAEL_MODE || !spanishSubtitleActive || !desktopSubtitleSource) return;
+        desktopSubtitleAudioStarted = true;
         if (!captionBox.classList.contains('show')) showDesktopSubtitle('');
         if (desktopSubtitleTimer) {
           clearInterval(desktopSubtitleTimer);
@@ -6082,6 +6324,7 @@ const MINI_CHAT_PAD = 3;
     };
     const onActualPlaybackStart = () => {
       if (!DESKTOP_RAPHAEL_MODE || !spanishSubtitleActive || !desktopSubtitleSource) return;
+      desktopSubtitleAudioStarted = true;
       // WebSocket receipt is not the same moment the speaker starts. Use the
       // browser's actual playback boundary so the subtitle never leads the
       // voice while the audio element is still buffering/starting.
@@ -6137,10 +6380,16 @@ const MINI_CHAT_PAD = 3;
     } else if (msg.type === 'subtitle_text') {
       // Keep the complete Spanish translation in a buffer; the visible
       // text is typed while Raphael is actually speaking.
+      // SHOW IMMEDIATELY - don't wait for audio to start playing.
       spanishSubtitleActive = true;
       aiThinking = false;
       spokenSoFar = '';
       setDesktopSubtitleSource(msg.text || '');
+      // Immediately display the subtitle (starts typewriter animation)
+      if (DESKTOP_RAPHAEL_MODE && msg.text) {
+        desktopSubtitleShown = msg.text;
+        showDesktopSubtitle(desktopSubtitleShown);
+      }
     } else if (msg.type === 'reply_done') {
       // The server sends the FINAL reply text here, which is not always what
       // was streamed: the guardrails can substitute a reply after generation
@@ -6207,6 +6456,14 @@ const MINI_CHAT_PAD = 3;
       if (captionFollowsSpeech && replyBuffer && !spokenSoFar && !spanishSubtitleActive) {
         showCaption(replyBuffer);
       }
+      // If synthesis or playback never began, keep the buffered subtitle
+      // visible as a readable text reply instead of clearing an empty box.
+      // (Now shown immediately on subtitle_text, but kept as safety net.)
+      if (DESKTOP_RAPHAEL_MODE && spanishSubtitleActive && desktopSubtitleSource
+          && !desktopSubtitleShown) {
+        desktopSubtitleShown = desktopSubtitleSource;
+        showDesktopSubtitle(desktopSubtitleShown);
+      }
       // UNCONDITIONAL. Speaking being finished means the turn is over,
       // whatever was or was not said - and a turn can now legitimately
       // produce no reply at all: a pre-routed action opens the page and
@@ -6219,7 +6476,8 @@ const MINI_CHAT_PAD = 3;
       // The whole reply has finished speaking - only now may the caption
       // start its countdown.
       speechInProgress = false;
-      finishDesktopSubtitle();
+      finishDesktopSubtitle(desktopSubtitleAudioStarted ? 1200 : 3200);
+      desktopSubtitleAudioStarted = false;
       desktopSpeechPulseSeen = false;
       if (captionMode === 'bar') scheduleBarCaptionAutoHide();
       spanishSubtitleActive = false;
@@ -7331,6 +7589,7 @@ const MINI_CHAT_PAD = 3;
         ) * desktopPresenceScale
       : 1.0;
     if (DESKTOP_RAPHAEL_MODE) {
+      updateDesktopEmotion(dt);
       desktopPresenceScale += (desktopPresenceTargetScale - desktopPresenceScale) * Math.min(1, dt * 5.0);
     }
     worldGroup.scale.setScalar(WORLD_GROUP_BASE_SCALE * startupScaleMult * desktopScale);
@@ -8034,7 +8293,7 @@ const MINI_CHAT_PAD = 3;
       wheelLinks.appendChild(rim);
     });
 
-    const NODE_R = 30 * uiScale;   // .wheel-item is 60px * uiScale across
+    const NODE_R = 32 * uiScale;   // .wheel-item is 64px * uiScale across
     const CRADLE_R = NODE_R + 8 * uiScale;
     // Widened from 1.05: a wider arc wraps further around the circle, so
     // it reads as a cradle holding it rather than a small nick in front
@@ -8276,6 +8535,10 @@ const MINI_CHAT_PAD = 3;
     const { badgeRadius } = positionWheel();
     void wheelReveal.offsetWidth;  // reflow, so transitions start from 0
 
+    // Ensure the outline and hub are visible before starting the animation
+    wheelOutline.style.display = '';
+    wheelCloseBtn.style.display = '';
+
     wheelStageTimers.forEach(clearTimeout);
     wheelStageTimers = [];
     linkRevealTimers.forEach(clearTimeout);
@@ -8352,6 +8615,17 @@ const MINI_CHAT_PAD = 3;
     wheelClearTimer = setTimeout(() => {
       if (!wheelOpen) wheelLinks.innerHTML = '';
     }, 260);
+
+    // Fully hide the outline and hub after their transitions finish
+    // (600ms for outline width/height, 420ms for hub transform).
+    // This prevents a stray white dot from remaining at the old position
+    // when the overlay is dragged with the menu closed.
+    setTimeout(() => {
+      if (!wheelOpen) {
+        wheelOutline.style.display = 'none';
+        wheelCloseBtn.style.display = 'none';
+      }
+    }, 650);
   }
   // Wrapped, NOT passed directly: addEventListener hands the listener a
   // MouseEvent, which arrived as closeWheel's "silent" argument and was
@@ -8532,6 +8806,8 @@ const MINI_CHAT_PAD = 3;
     const hostCall = (cmd) => { document.title = cmd; };
     document.getElementById('panel-win-min')
       .addEventListener('click', () => hostCall('GS_PANEL_MIN'));
+    document.getElementById('panel-win-max')
+      .addEventListener('click', () => hostCall('GS_PANEL_MAX'));
     document.getElementById('panel-win-close')
       .addEventListener('click', () => hostCall('GS_PANEL_CLOSE'));
     document.addEventListener('keydown', (e) => {
@@ -8829,6 +9105,15 @@ const MINI_CHAT_PAD = 3;
   // own close button (the center panel takes priority since it sits on
   // top of everything else when both happen to be open).
   document.addEventListener('keydown', (e) => {
+    if (DESKTOP_RAPHAEL_MODE && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+      const thoughts = {
+        ArrowUp: 'Ese movimiento apunta hacia arriba. Lo tendré en cuenta.',
+        ArrowDown: 'Vas hacia abajo; parece una decisión deliberada.',
+        ArrowLeft: 'A la izquierda… interesante alternativa.',
+        ArrowRight: 'A la derecha. Veamos qué encontramos.'
+      };
+      desktopThinkingReaction(thoughts[e.key]);
+    }
     if (e.key !== 'Escape') return;
     if (centerPanelOverlay.classList.contains('open')) {
       closeCenterPanel();
@@ -9169,7 +9454,14 @@ const MINI_CHAT_PAD = 3;
       const pttBtn = document.getElementById('ptt-rebind-btn');
       if (pttBtn) { pttBtn.dataset.combo = saved['ptt-combo']; pttBtn.textContent = comboLabel(saved['ptt-combo']); }
     }
-    applyCaptionPosition(saved['caption-pos']);
+    if (DESKTOP_RAPHAEL_MODE) {
+      // The desktop subtitle is always screen-centered; an old saved drag
+      // position from the regular HUD must not pull it to one side.
+      captionPos = null;
+      placeCaption();
+    } else {
+      applyCaptionPosition(saved['caption-pos']);
+    }
   }
   let saveSettingsTimer = null;
   function scheduleSaveSettings() {
@@ -9198,6 +9490,82 @@ const MINI_CHAT_PAD = 3;
     }
     setTimeout(() => { saveSettingsBtn.textContent = 'SAVE SETTINGS'; }, 1500);
   });
+
+  // ---------- Personality profile save/load ----------
+  const personaSaveBtn = document.getElementById('persona-save-btn');
+  const personaStatus = document.getElementById('persona-save-status');
+  const personaInputs = [
+    'persona-use-name-toggle',
+    'persona-name-input',
+    'persona-interests-input',
+    'persona-traits-input',
+    'persona-tone-select',
+    'persona-dislikes-input',
+  ];
+
+  function collectPersona() {
+    const data = {};
+    personaInputs.forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) {
+        data[id] = el.type === 'checkbox' ? el.checked : el.value;
+      }
+    });
+    return data;
+  }
+
+  function applyPersona(data) {
+    if (!data || typeof data !== 'object') return;
+    personaInputs.forEach((id) => {
+      const el = document.getElementById(id);
+      if (el && data[id] !== undefined) {
+        if (el.type === 'checkbox') el.checked = data[id];
+        else el.value = data[id];
+      }
+    });
+  }
+
+  // Load persona from server on connect
+  function requestPersonaLoad() {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'persona_load' }));
+    }
+  }
+
+  // Save persona to server
+  function requestPersonaSave() {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      const data = collectPersona();
+      ws.send(JSON.stringify({ type: 'persona_save', persona: data }));
+      if (personaStatus) personaStatus.textContent = 'Guardando...';
+    } else if (personaStatus) {
+      personaStatus.textContent = 'No conectado';
+    }
+  }
+
+  if (personaSaveBtn) {
+    personaSaveBtn.addEventListener('click', requestPersonaSave);
+  }
+
+  // Listen for persona_load response
+  const originalHandleServerMessage = handleServerMessage;
+  handleServerMessage = function(event) {
+    const msg = JSON.parse(event.data);
+    if (msg.type === 'persona_load' && msg.persona) {
+      applyPersona(msg.persona);
+    } else if (msg.type === 'persona_save' && msg.ok) {
+      if (personaStatus) {
+        personaStatus.textContent = 'Perfil guardado correctamente';
+        setTimeout(() => { personaStatus.textContent = ''; }, 3000);
+      }
+    } else if (msg.type === 'persona_save' && msg.error) {
+      if (personaStatus) personaStatus.textContent = 'Error: ' + msg.error;
+    }
+    return originalHandleServerMessage(event);
+  };
+
+  // Request persona on initial connect
+  setTimeout(requestPersonaLoad, 1000);
 
   // ---------- Visual size sliders ----------
   // Multipliers applied on top of each group's existing idle-breathing
@@ -9529,7 +9897,8 @@ const MINI_CHAT_PAD = 3;
   // The page never holds a real key it did not just receive from the
   // user: the server sends MASKS, and a mask sent back is ignored rather
   // than stored, so a saved key can be replaced but never read out.
-  const AI_KEY_FIELDS = { anthropic: 'ai-key-anthropic',
+  const AI_KEY_FIELDS = { nvidia: 'ai-key-nvidia',
+                          anthropic: 'ai-key-anthropic',
                           openai: 'ai-key-openai',
                           tts: 'ai-key-tts' };
   function renderAiSettings(cfg) {

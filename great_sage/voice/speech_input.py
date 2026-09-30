@@ -150,7 +150,7 @@ class PushToTalkRecorder:
 class FollowUpListener:
     """Short conversational listening window after Raphael finishes speaking."""
     VOICE_THRESHOLD = 0.02
-    SILENCE_HANG_MS = 700
+    SILENCE_HANG_MS = 450
     MAX_UTTERANCE_S = 10
     LISTEN_WINDOW_S = 8
     BLOCK_MS = 30
@@ -237,7 +237,7 @@ class WakeWordListener:
     next utterance without needing to restart listening."""
 
     VOICE_THRESHOLD = 0.02
-    SILENCE_HANG_MS = 700
+    SILENCE_HANG_MS = 450
     MAX_UTTERANCE_S = 12
     BLOCK_MS = 30
 

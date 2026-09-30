@@ -82,3 +82,30 @@ def save_hud_settings(path: str, hud_settings: Dict[str, Any]) -> None:
     data = load(path)
     data["hud"] = hud_settings
     save(path, data)
+
+
+# --- Personality profile (stored in DATA_DIR, not in repo) ---
+def _persona_path() -> str:
+    from great_sage.config import settings
+    return os.path.join(settings.DATA_DIR, "personality.json")
+
+
+def load_persona() -> Dict[str, Any]:
+    path = _persona_path()
+    if not os.path.isfile(path):
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except (ValueError, OSError):
+        return {}
+
+
+def save_persona(path: str, persona: Dict[str, Any]) -> None:
+    # path is ignored; always use DATA_DIR
+    actual_path = _persona_path()
+    data = load_persona()
+    data.update(persona)
+    with open(actual_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)

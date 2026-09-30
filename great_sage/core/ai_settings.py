@@ -33,6 +33,9 @@ DEFAULTS: Dict[str, Any] = {
     "local_only": False,
     "nvidia_fast_model": "",
     "nvidia_complex_model": "",
+    "nvidia_speaker_model": "",
+    "nvidia_reasoner_model": "",
+    "nvidia_reviewer_model": "",
 }
 
 
@@ -116,6 +119,7 @@ def apply_update(data: Dict[str, Any], update: Dict[str, Any]) -> Dict[str, Any]
     for field in (
         "chat_provider", "chat_model", "tts_provider", "mode",
         "nvidia_fast_model", "nvidia_complex_model",
+        "nvidia_speaker_model", "nvidia_reasoner_model", "nvidia_reviewer_model",
     ):
         if field in update and isinstance(update[field], str):
             data[field] = update[field]
@@ -230,39 +234,54 @@ def build_provider(data, fallback):
             ).strip()
             if not key:
                 return fallback, "Ollama / Local (NVIDIA key missing)"
-            from great_sage.models.nvidia_provider import NvidiaProvider, NvidiaRoutingProvider
-            fast_model = (
-                data.get("nvidia_fast_model")
-                or settings.NVIDIA_API_MODEL_FAST
+            from great_sage.models.nvidia_provider import NvidiaProvider, MultiRoleProvider
+            
+            # Three-role architecture: Speaker, Reasoner, Reviewer
+            speaker_model = (
+                data.get("nvidia_speaker_model")
+                or settings.NVIDIA_API_MODEL_SPEAKER
             )
-            complex_model = (
-                data.get("nvidia_complex_model")
-                or settings.NVIDIA_API_MODEL_COMPLEX
+            reasoner_model = (
+                data.get("nvidia_reasoner_model")
+                or settings.NVIDIA_API_MODEL_REASONER
             )
-            fast = NvidiaProvider(
+            reviewer_model = (
+                data.get("nvidia_reviewer_model")
+                or settings.NVIDIA_API_MODEL_REVIEWER
+            )
+            
+            speaker = NvidiaProvider(
                 api_key=key,
-                model=fast_model,
+                model=speaker_model,
                 base_url=settings.NVIDIA_API_BASE_URL,
                 timeout=settings.NVIDIA_API_TIMEOUT,
-                reasoning_budget=getattr(settings, "NVIDIA_FAST_REASONING_BUDGET", 0),
+                reasoning_budget=getattr(settings, "NVIDIA_SPEAKER_REASONING_BUDGET", 0),
                 enable_thinking=False,
             )
-            complex_provider = NvidiaProvider(
+            reasoner = NvidiaProvider(
                 api_key=key,
-                model=complex_model,
+                model=reasoner_model,
                 base_url=settings.NVIDIA_API_BASE_URL,
                 timeout=settings.NVIDIA_API_TIMEOUT,
-                reasoning_budget=getattr(settings, "NVIDIA_COMPLEX_REASONING_BUDGET", 8192),
+                reasoning_budget=getattr(settings, "NVIDIA_REASONER_REASONING_BUDGET", 8192),
                 enable_thinking=False,
             )
-            remote = NvidiaRoutingProvider(
-                fast, complex_provider, fallback=None
+            reviewer = NvidiaProvider(
+                api_key=key,
+                model=reviewer_model,
+                base_url=settings.NVIDIA_API_BASE_URL,
+                timeout=settings.NVIDIA_API_TIMEOUT,
+                reasoning_budget=getattr(settings, "NVIDIA_REVIEWER_REASONING_BUDGET", 4096),
+                enable_thinking=False,
+            )
+            
+            multi_role = MultiRoleProvider(
+                speaker, reasoner, reviewer, fallback=fallback
             )
             if routing == "local_first":
-                return FallbackProvider(fallback, remote), "Local first / NVIDIA fallback"
-            return NvidiaRoutingProvider(
-                fast, complex_provider, fallback=fallback
-            ), "NVIDIA API (fast/complex, local fallback)"
+                from great_sage.models.nvidia_provider import FallbackProvider
+                return FallbackProvider(fallback, multi_role), "Local first / NVIDIA multi-role fallback"
+            return multi_role, "NVIDIA API (speaker/reasoner/reviewer, local fallback)"
 
         if want == "nvidia_local":
             from great_sage.models.nvidia_provider import NvidiaProvider

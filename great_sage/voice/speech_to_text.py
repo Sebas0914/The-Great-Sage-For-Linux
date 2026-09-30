@@ -4,6 +4,7 @@ cloud API. Used by both push-to-talk and the wake-word listener.
 """
 
 import logging
+import os
 
 import numpy as np
 
@@ -16,8 +17,14 @@ def _get_model():
     global _model
     if _model is None:
         from faster_whisper import WhisperModel
-        # Multilingual Whisper model so Spanish input is transcribed correctly.
-        _model = WhisperModel("base", device="cpu", compute_type="int8")
+        # Model size configurable via env var or settings.
+        # "base" = fastest, least accurate. "small" = better. "medium" = best but slower.
+        model_size = os.environ.get("GREAT_SAGE_STT_MODEL", "small")
+        # Use int8 for CPU efficiency. For GPU, could use "float16".
+        device = os.environ.get("GREAT_SAGE_STT_DEVICE", "cpu")
+        compute_type = "int8" if device == "cpu" else "float16"
+        log.info("Loading Whisper model: %s on %s (%s)", model_size, device, compute_type)
+        _model = WhisperModel(model_size, device=device, compute_type=compute_type)
     return _model
 
 
@@ -37,19 +44,26 @@ def transcribe(audio: np.ndarray) -> str:
     initial_prompt = getattr(
         settings,
         "STT_INITIAL_PROMPT",
-        "Raphael. Great Sage. Ciel.",
+        "Raphael. Great Sage. Ciel. WhatsApp. Firefox. Spotify. Roblox. Steam. Discord."
     )
+    # VAD parameters tuned for fewer false positives and better segmentation
+    vad_params = {
+        "threshold": 0.5,              # Higher = less sensitive to background noise
+        "min_speech_duration_ms": 250, # Minimum speech chunk
+        "min_silence_duration_ms": 800,# Longer silence before ending utterance
+        "speech_pad_ms": 400,          # Padding around detected speech
+    }
     segments, _ = model.transcribe(
         audio,
         language=language,
         vad_filter=True,
-        vad_parameters={
-            "threshold": 0.3,
-            "min_speech_duration_ms": 100,
-            "min_silence_duration_ms": 500,
-        },
+        vad_parameters=vad_params,
         initial_prompt=initial_prompt,
         condition_on_previous_text=False,
+        # Suppress tokens that commonly cause hallucinations
+        suppress_tokens=[-1],
+        # Beam size for better accuracy (1=fast, 5=better)
+        beam_size=5,
     )
     text = "".join(seg.text for seg in segments).strip()
 

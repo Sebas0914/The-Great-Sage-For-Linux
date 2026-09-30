@@ -65,7 +65,7 @@ FIRST_CHUNK_MIN_CHARS = 25
 CHUNK_MIN_CHARS = 80
 MAX_CHUNK_CHARS = 240
 
-_SENTENCE_END = ".!?"
+_SENTENCE_END = ".!?。！？"
 
 
 def split_into_chunks(text: str) -> List[str]:
@@ -82,7 +82,10 @@ def split_into_chunks(text: str) -> List[str]:
     sentences: List[str] = []
     start = 0
     for i, ch in enumerate(text):
-        if ch in _SENTENCE_END and (i + 1 == len(text) or text[i + 1].isspace()):
+        japanese_end = ch in "。！？"
+        if ch in _SENTENCE_END and (
+            japanese_end or i + 1 == len(text) or text[i + 1].isspace()
+        ):
             sentences.append(text[start : i + 1].strip())
             start = i + 1
     tail = text[start:].strip()
@@ -145,7 +148,8 @@ def take_chunk(buffer: str, is_first: bool, final: bool = False):
         at_end = i + 1 == len(text)
         if at_end and not final:
             break  # ambiguous until the next delta arrives
-        if not at_end and not text[i + 1].isspace():
+        japanese_end = ch in "。！？"
+        if not at_end and not text[i + 1].isspace() and not japanese_end:
             # Small models routinely drop the space after a full stop
             # ("...effects.Normalization is..."). Without this, the whole
             # passage reads as one unsplittable run and speech waits for
@@ -191,18 +195,23 @@ def _split_for_speech(text: str, target: int):
     and a sentence that starts mid-thought lands wrong.
     """
     import re
-    sentences = re.split(r"(?<=[.!?])\s+", (text or "").strip())
-    out, current = [], ""
+    sentences = re.split(r"(?<=[!?。！？])\s*|(?<=\.)\s+", (text or "").strip())
+    out = []
     for sentence in sentences:
         if not sentence:
             continue
-        if current and len(current) + 1 + len(sentence) > target:
-            out.append(current)
-            current = sentence
-        else:
-            current = (current + " " + sentence).strip()
-    if current:
-        out.append(current)
+        while len(sentence) > target:
+            cut = sentence.rfind(" ", 0, target)
+            if cut <= 0:
+                cut = sentence.rfind("、", 0, target)
+                if cut < target // 2:
+                    cut = target
+                else:
+                    cut += 1
+            out.append(sentence[:cut].strip())
+            sentence = sentence[cut:].strip()
+        if sentence:
+            out.append(sentence)
     return out or [text]
 
 
@@ -450,9 +459,11 @@ class F5TTSVoiceOutput(VoiceOutput):
         """
         import numpy as _np
         threshold = getattr(settings, "F5_CHUNK_THRESHOLD_CHARS", 260)
-        pieces = (_split_for_speech(text,
-                                    getattr(settings, "F5_CHUNK_TARGET_CHARS", 220))
-                  if len(text) > threshold else [text])
+        pieces = _split_for_speech(
+            text, getattr(settings, "F5_CHUNK_TARGET_CHARS", 220)
+        )
+        if len(text) <= threshold and len(pieces) <= 1:
+            pieces = [text]
         if len(pieces) == 1:
             wav, rate = self._generate_once(pieces[0])
             return _pad_tail(wav, rate), rate
@@ -465,7 +476,7 @@ class F5TTSVoiceOutput(VoiceOutput):
             chunks.append(wav)
         # A short silence between sentences, which is what a speaker would
         # do anyway - and it hides any tiny discontinuity at the join.
-        gap = _np.zeros(int((rate or 24000) * 0.12), dtype=chunks[0].dtype)
+        gap = _np.zeros(int((rate or 24000) * 0.24), dtype=chunks[0].dtype)
         joined = chunks[0]
         for extra in chunks[1:]:
             joined = _np.concatenate([joined, gap, extra])
@@ -486,7 +497,7 @@ class F5TTSVoiceOutput(VoiceOutput):
             except Exception:
                 pass
 
-    def _speak_tts_segment(self, text: str) -> None:
+    def _speak_tts_segment(self, text: str, timer=None) -> None:
         """Generate and play in a producer/consumer pair.
 
         The sink's play() blocks until the audio finishes (the browser
@@ -510,6 +521,8 @@ class F5TTSVoiceOutput(VoiceOutput):
                 from great_sage.voice import api_tts as _api
                 audio = _api.synthesize(provider, key, text)
                 setattr(self._sink, "pending_text", text)
+                if timer is not None:
+                    timer.first_audio()
                 self._play_audio_bytes(audio)
                 return
             except VoiceError as exc:
@@ -528,6 +541,8 @@ class F5TTSVoiceOutput(VoiceOutput):
             samples, rate = self.generate(spoken)
             if not self._stop_requested:
                 setattr(self._sink, "pending_text", spoken)
+                if timer is not None:
+                    timer.first_audio()
                 self._play(samples, rate)
             return
 
@@ -537,6 +552,8 @@ class F5TTSVoiceOutput(VoiceOutput):
         if len(chunks) == 1:
             samples, rate = self.generate(chunks[0])
             if not self._stop_requested:
+                if timer is not None:
+                    timer.first_audio()
                 self._play(samples, rate)
             return
 
@@ -562,6 +579,8 @@ class F5TTSVoiceOutput(VoiceOutput):
                 if item is None or self._stop_requested:
                     break
                 samples, rate = item
+                if timer is not None:
+                    timer.first_audio()
                 self._play(samples, rate)
         finally:
             if failure:
@@ -603,7 +622,7 @@ class F5TTSVoiceOutput(VoiceOutput):
             data = data.mean(axis=1)
         self._play(data, rate)
 
-    def speak(self, text: str) -> None:
+    def speak(self, text: str, timer=None) -> None:
         if not text or not text.strip():
             return
         self._stop_requested = False
@@ -619,9 +638,13 @@ class F5TTSVoiceOutput(VoiceOutput):
                 # starts with what is on screen - which made the caption
                 # clear and retype itself when speech ended.
                 setattr(self._sink, "pending_text", spoken)
+                if timer is not None:
+                    timer.first_audio()
                 self._play_audio_file(payload)
             else:
-                self._speak_tts_segment(payload)
+                if timer is not None:
+                    timer.first_chunk()
+                self._speak_tts_segment(payload, timer=timer)
 
     def speak_stream(self, deltas: Iterable[str], timer=None) -> None:
         """Speak text as the model produces it, instead of after it finishes.

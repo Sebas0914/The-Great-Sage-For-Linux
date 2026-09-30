@@ -220,14 +220,24 @@ class GlobalHotkey:
                 # forever, and this thread has to notice stop() so the app
                 # can shut down instead of hanging on exit.
                 got = user32.PeekMessageW(ctypes.byref(msg), None, 0, 0, 1)
-                if got and msg.message == WM_HOTKEY and not held:
+                if got and msg.message == WM_HOTKEY:
+                    if held:
+                        # New WM_HOTKEY while still marked as held - the key was
+                        # released and pressed again but we missed the release
+                        # (GetAsyncKeyState can lag). Force a release first.
+                        log.debug("Global hotkey: WM_HOTKEY while held, forcing release")
+                        held = False
+                        fire(self._on_release, "release")
+                    # Start the new hold
                     held = True
                     held_since = time.monotonic()
+                    log.debug("Global hotkey: WM_HOTKEY received, firing press")
                     fire(self._on_press, "press")
                 elif held:
                     # Only ever reached while the key is genuinely down.
                     if not key_is_down():
                         held = False
+                        log.debug("Global hotkey: key released, firing release")
                         fire(self._on_release, "release")
                     elif time.monotonic() - held_since > self.MAX_HOLD_S:
                         log.warning("Voice key held for over %.0fs - "

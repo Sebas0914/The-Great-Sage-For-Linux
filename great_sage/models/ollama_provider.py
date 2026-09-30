@@ -103,6 +103,8 @@ class OllamaProvider(ModelProvider):
                 f"Ollama did not respond within {self.timeout}s."
             ) from exc
         except requests.exceptions.HTTPError as exc:
+            if self._switch_to_installed_model(exc):
+                return self.send_message(messages)
             raise ModelProviderError(self._describe_http_error(exc)) from exc
 
         try:
@@ -132,6 +134,9 @@ class OllamaProvider(ModelProvider):
                 f"Ollama did not respond within {self.timeout}s."
             ) from exc
         except requests.exceptions.HTTPError as exc:
+            if self._switch_to_installed_model(exc):
+                yield from self.stream_response(messages)
+                return
             raise ModelProviderError(self._describe_http_error(exc)) from exc
 
         try:
@@ -198,6 +203,38 @@ class OllamaProvider(ModelProvider):
         return ("Ollama returned an error (HTTP %s)%s"
                 % (status, ": " + detail if detail else "."))
 
+    def _switch_to_installed_model(self, exc) -> bool:
+        """Recover a missing configured model using one installed tool model."""
+        response = getattr(exc, "response", None)
+        if response is None or response.status_code != 404:
+            return False
+        try:
+            tags = requests.get(f"{self.host}/api/tags", timeout=3)
+            tags.raise_for_status()
+            names = [item.get("name", "")
+                     for item in tags.json().get("models", [])]
+        except Exception:
+            log.warning("Could not inspect installed Ollama models after 404")
+            return False
+
+        current = self.model
+        if current in names or (":" not in current and current + ":latest" in names):
+            # The model exists, so the 404 came from another endpoint error.
+            return False
+        # Prefer the installed model with the strongest context/tool support;
+        # then try the smaller Nemotron model before any arbitrary local model.
+        for candidate in (
+                "qwen2.5:7b-instruct", "nemotron-mini:latest"):
+            if candidate in names:
+                self.model = candidate
+                log.warning(
+                    "Configured Ollama model %s is not installed; retrying "
+                    "the request with installed model %s",
+                    current, candidate,
+                )
+                return True
+        return False
+
     def unload(self) -> bool:
         """Drop the model from VRAM now, without waiting for a timeout.
 
@@ -238,6 +275,9 @@ class OllamaProvider(ModelProvider):
             raise ModelProviderError(
                 f"Ollama did not respond within {self.timeout}s.") from exc
         except requests.exceptions.HTTPError as exc:
+            if self._switch_to_installed_model(exc):
+                return self.chat_raw(messages, tools=tools,
+                                     response_format=response_format)
             raise ModelProviderError(self._describe_http_error(exc)) from exc
         try:
             return response.json()["message"]

@@ -28,7 +28,8 @@ class CameraPreview(QWidget):
             | Qt.WindowType.Tool
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
-        self.resize(760, 520)
+        # Fixed size - prevent window from growing
+        self.setFixedSize(760, 520)
 
         self.video = QLabel()
         self.video.setAlignment(Qt.AlignmentFlag.AlignCenter)

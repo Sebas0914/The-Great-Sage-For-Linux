@@ -120,11 +120,18 @@ class ChatEngine:
             self._pending_images = []
         return outgoing
 
+    def _set_provider_role(self, role: str) -> None:
+        """Set the active role on the provider if it supports multi-role."""
+        if hasattr(self.provider, "set_role"):
+            self.provider.set_role(role)
+
     def send(self, user_input: str) -> str:
         """Send a message, get the full reply back, and record both in history."""
         outgoing = self._build_outgoing(user_input)
+        # Use speaker role for final response
+        self._set_provider_role("speaker")
         try:
-            reply = self.provider.send_message(outgoing)
+            reply = self.provider.send_message(outgoing, _role="speaker")
         except ModelProviderError:
             # Don't leave an unanswered user turn in history on failure.
             self.history.pop()
@@ -136,8 +143,10 @@ class ChatEngine:
         """Send a message, yield the reply incrementally, then record it."""
         outgoing = self._build_outgoing(user_input)
         collected = []
+        # Use speaker role for final response
+        self._set_provider_role("speaker")
         try:
-            for chunk in self.provider.stream_response(outgoing):
+            for chunk in self.provider.stream_response(outgoing, _role="speaker"):
                 collected.append(chunk)
                 yield chunk
         except ModelProviderError:
@@ -229,7 +238,9 @@ class ChatEngine:
                              "images": list(preroute_images)})
         try:
             for _round in range(max_rounds):
-                message = self.provider.chat_raw(outgoing, tools=tools_schema)
+                # Use reasoner role for tool-calling/planning
+                self._set_provider_role("reasoner")
+                message = self.provider.chat_raw(outgoing, tools=tools_schema, _role="reasoner")
                 calls = message.get("tool_calls") or []
                 if not calls:
                     reply = message.get("content") or ""

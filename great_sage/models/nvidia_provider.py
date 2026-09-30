@@ -175,6 +175,8 @@ class NvidiaRoutingProvider(ModelProvider):
         "implementation", "implementa", "analiza", "analyze", "analysis",
         "explica en detalle", "paso a paso", "multiple files", "varios archivos",
         "document", "documento", "long context", "why does", "por qué",
+        "diseño", "diseno", "wayland", "overlay", "corrige", "arregla",
+        "modifica", "revisa el código", "revisa el codigo",
     )
     CLASSIFIER_MIN_CHARS = 80
     CLASSIFIER_MAX_CHARS = 1399
@@ -242,9 +244,10 @@ class NvidiaRoutingProvider(ModelProvider):
         if self._obvious_complex(text):
             self.last_classification = "complex"
             return True
-        classified = self._classify(text)
-        if classified is not None:
-            return classified
+        # A separate remote classification request made every longer chat
+        # turn wait for two model round trips before any useful response.
+        # Simple turns go straight to the fast route; clear engineering
+        # requests are handled by the markers above.
         self.last_classification = "fast"
         return False
 
@@ -301,3 +304,88 @@ class NvidiaRoutingProvider(ModelProvider):
             model for model in (self.fast.model, self.complex.model) if model
         ))
 
+
+class MultiRoleProvider(ModelProvider):
+    """Three-role provider: Speaker (casual), Reasoner (deep), Reviewer (critique).
+
+    This enables the universal reasoning architecture where:
+    - SPEAKER generates final user-facing replies (fast, no reasoning)
+    - REASONER plans, analyzes, decides tools (deep reasoning)
+    - REVIEWER reviews code/output, finds errors (moderate reasoning)
+    """
+
+    ROLE_SPEAKER = "speaker"
+    ROLE_REASONER = "reasoner"
+    ROLE_REVIEWER = "reviewer"
+
+    def __init__(self, speaker: NvidiaProvider, reasoner: NvidiaProvider,
+                 reviewer: NvidiaProvider, fallback: ModelProvider = None):
+        self.speaker = speaker
+        self.reasoner = reasoner
+        self.reviewer = reviewer
+        self.fallback = fallback
+        self.active_role = self.ROLE_SPEAKER
+        self.last_provider = "nvidia"
+
+    def _get_provider(self, role: str = None):
+        role = role or self.active_role
+        if role == self.ROLE_SPEAKER:
+            return self.speaker
+        elif role == self.ROLE_REASONER:
+            return self.reasoner
+        elif role == self.ROLE_REVIEWER:
+            return self.reviewer
+        return self.speaker
+
+    def set_role(self, role: str):
+        """Set the active role for subsequent calls."""
+        self.active_role = role
+
+    def _call_with_fallback(self, method, *args, **kwargs):
+        role = kwargs.pop("_role", None)
+        provider = self._get_provider(role)
+        try:
+            self.last_provider = "nvidia"
+            return getattr(provider, method)(*args, **kwargs)
+        except ModelProviderError as exc:
+            log.warning(
+                "NVIDIA %s role failed (model=%s): %s; using local fallback",
+                role or self.active_role,
+                provider.model,
+                exc,
+            )
+            if self.fallback is None:
+                raise
+            self.last_provider = "local-fallback"
+            return getattr(self.fallback, method)(*args, **kwargs)
+
+    def send_message(self, messages: List[Message], _role: str = None) -> str:
+        return self._call_with_fallback("send_message", messages, _role=_role)
+
+    def stream_response(self, messages: List[Message], _role: str = None) -> Iterator[str]:
+        provider = self._get_provider(_role)
+        emitted = False
+        try:
+            for piece in provider.stream_response(messages):
+                emitted = True
+                yield piece
+        except ModelProviderError as exc:
+            log.warning(
+                "NVIDIA %s streaming role failed (model=%s): %s; using local fallback",
+                _role or self.active_role,
+                provider.model,
+                exc,
+            )
+            if self.fallback is None or emitted:
+                raise
+            self.last_provider = "local-fallback"
+            yield from self.fallback.stream_response(messages)
+
+    def chat_raw(self, messages, tools=None, response_format=None, _role: str = None):
+        return self._call_with_fallback(
+            "chat_raw", messages, tools=tools, response_format=response_format, _role=_role)
+
+    def get_available_models(self) -> List[str]:
+        return list(dict.fromkeys(
+            model for model in (self.speaker.model, self.reasoner.model, self.reviewer.model) if model
+        ))

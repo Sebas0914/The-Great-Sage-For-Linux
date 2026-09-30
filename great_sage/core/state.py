@@ -37,7 +37,8 @@ BANDS: Dict[str, tuple] = {
     "energy": (0.7, 0.2, 1.0),         # capacity to do heavy work now
 }
 
-DECAY_HALFLIFE_S = 600.0     # ten minutes of silence returns it to rest
+# Longer half-life = slower mood transitions. 1800s = 30 minutes.
+DECAY_HALFLIFE_S = 1800.0
 
 
 @dataclass
@@ -137,23 +138,23 @@ class SageState:
 
 def on_user_message(state: SageState, text: str):
     length = len(text or "")
-    state.nudge(engagement=+0.06,
+    state.nudge(engagement=+0.03,
                 # A long message is a real question; a two-word one is not.
-                curiosity=+0.03 if length > 80 else -0.01)
+                curiosity=+0.015 if length > 80 else -0.005)
 
 
 def on_reply(state: SageState, reply: str, used_tools: bool):
-    state.nudge(energy=-0.04 if used_tools else -0.02,
+    state.nudge(energy=-0.02 if used_tools else -0.01,
                 # Grounding an answer in a tool result is the one signal
                 # available that it was actually right.
-                confidence=+0.03 if used_tools else 0.0)
+                confidence=+0.015 if used_tools else 0.0)
 
 
 def on_correction(state: SageState):
     """Master pushed back - the last answer missed."""
-    state.nudge(confidence=-0.15, curiosity=+0.08)
+    state.nudge(confidence=-0.08, curiosity=+0.04)
     log.info("State: correction registered")
 
 
 def on_idle(state: SageState):
-    state.nudge(engagement=-0.05)
+    state.nudge(engagement=-0.025)

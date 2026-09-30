@@ -17,10 +17,31 @@ AI_ROUTING_MODE = os.environ.get("GREAT_SAGE_AI_MODE", "nvidia_first").lower()
 NVIDIA_API_BASE_URL = os.environ.get("GREAT_SAGE_NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1")
 NVIDIA_API_MODEL_FAST = os.environ.get("GREAT_SAGE_NVIDIA_FAST_MODEL", "nvidia/nemotron-3.5-lightning-30b-a3b")
 NVIDIA_API_MODEL_COMPLEX = os.environ.get("GREAT_SAGE_NVIDIA_COMPLEX_MODEL", "nvidia/nemotron-3.5-lightning-30b-a3b")
-NVIDIA_API_TIMEOUT = int(os.environ.get("GREAT_SAGE_NVIDIA_TIMEOUT", "120"))
+
+# --- Multi-model AI roles (spec: universal reasoning) ---
+# Three distinct models for different tasks:
+# 1. SPEAKER: Casual, conversational, limited reasoning - generates final replies
+# 2. REASONER: Powerful, deep reasoning - plans, decides tools, analyzes
+# 3. REVIEWER: Code/text review - finds errors, suggests corrections
+# Each can be overridden via env vars. Defaults use the same model but with
+# different reasoning budgets and system prompts.
+NVIDIA_API_MODEL_SPEAKER = os.environ.get("GREAT_SAGE_NVIDIA_SPEAKER_MODEL", NVIDIA_API_MODEL_FAST)
+NVIDIA_API_MODEL_REASONER = os.environ.get("GREAT_SAGE_NVIDIA_REASONER_MODEL", NVIDIA_API_MODEL_COMPLEX)
+NVIDIA_API_MODEL_REVIEWER = os.environ.get("GREAT_SAGE_NVIDIA_REVIEWER_MODEL", NVIDIA_API_MODEL_COMPLEX)
+
+# Reasoning budgets per role (tokens). Speaker: no reasoning (fast). Reasoner: deep. Reviewer: moderate.
+NVIDIA_SPEAKER_REASONING_BUDGET = int(os.environ.get("GREAT_SAGE_NVIDIA_SPEAKER_REASONING_BUDGET", "0"))
+NVIDIA_REASONER_REASONING_BUDGET = int(os.environ.get("GREAT_SAGE_NVIDIA_REASONER_REASONING_BUDGET", "8192"))
+NVIDIA_REVIEWER_REASONING_BUDGET = int(os.environ.get("GREAT_SAGE_NVIDIA_REVIEWER_REASONING_BUDGET", "4096"))
+
+# Fail over to the configured local provider after one slow remote minute;
+# 120 seconds left simple action turns feeling hung before they could fail.
+NVIDIA_API_TIMEOUT = int(os.environ.get("GREAT_SAGE_NVIDIA_TIMEOUT", "60"))
 # Secret is intentionally supplied at runtime; never commit the key.
 NVIDIA_API_KEY_ENV = "GREAT_SAGE_NVIDIA_API_KEY"
-# Nemotron 3.5 Lightning: keep IA1/classification non-thinking and give IA2 a bounded reasoning budget.\nNVIDIA_FAST_REASONING_BUDGET = int(os.environ.get("GREAT_SAGE_NVIDIA_FAST_REASONING_BUDGET", "0"))\nNVIDIA_COMPLEX_REASONING_BUDGET = int(os.environ.get("GREAT_SAGE_NVIDIA_COMPLEX_REASONING_BUDGET", "8192"))
+# Nemotron 3.5 Lightning: keep IA1/classification non-thinking and give IA2 a bounded reasoning budget.
+NVIDIA_FAST_REASONING_BUDGET = int(os.environ.get("GREAT_SAGE_NVIDIA_FAST_REASONING_BUDGET", "0"))
+NVIDIA_COMPLEX_REASONING_BUDGET = int(os.environ.get("GREAT_SAGE_NVIDIA_COMPLEX_REASONING_BUDGET", "8192"))
 LOCAL_ONLY = os.environ.get("GREAT_SAGE_LOCAL_ONLY", "false").lower() in {"1", "true", "yes", "on"}
 WEB_TOOLS_ENABLED = os.environ.get("GREAT_SAGE_WEB_TOOLS", "false").lower() in {"1", "true", "yes", "on"}
 INPUT_LANGUAGE = os.environ.get("GREAT_SAGE_INPUT_LANGUAGE", "es")
@@ -28,6 +49,9 @@ OUTPUT_LANGUAGE = os.environ.get("GREAT_SAGE_OUTPUT_LANGUAGE", "ja")
 
 # --- Ollama settings -----------------------------------------------
 OLLAMA_HOST = os.environ.get("GREAT_SAGE_OLLAMA_HOST", "http://localhost:11434")
+OLLAMA_VISION_MODEL = os.environ.get(
+    "GREAT_SAGE_OLLAMA_VISION_MODEL", "llava:latest"
+)
 # qwen3.5:4b is the model, and the ONLY one installed. The lineage that
 # got here, each step a head-to-head on this project's own system prompt:
 # llama3 -> qwen3:8b -> qwen2.5:3b -> qwen3.5:4b.
@@ -596,7 +620,8 @@ GLOBAL_HOTKEY = os.environ.get("GREAT_SAGE_HOTKEY", "alt+1")
 # decoding hint; the recognized speech is still determined from the audio.
 STT_INITIAL_PROMPT = os.environ.get(
     "GREAT_SAGE_STT_INITIAL_PROMPT",
-    "Raphael. Rafael. Great Sage. Ciel. Gran Sabio.",
+    "Raphael. Rafael. Great Sage. Ciel. Gran Sabio. WhatsApp. Spotify. "
+    "Arctic Monkeys. Number One Party Anthem. Denny.",
 )
 
 # How long Ollama holds the model in VRAM after a reply, in seconds.
@@ -705,7 +730,7 @@ F5_RVC_LOCK_JAPANESE_REFERENCE = (
 # ~0.8s sooner - but a listening A/B rejected 4 outright as clearly
 # degraded. 8 is the floor for acceptable quality on this voice, not
 # merely a default nobody revisited.
-F5_NFE_STEP = 16
+F5_NFE_STEP = 8
 
 # Synthesize the whole reply as ONE clip, rather than streaming it out in
 # sentence-sized chunks as the model writes.
@@ -773,25 +798,30 @@ F5_SPEED = 0.86
 F5_CHUNK_THRESHOLD_CHARS = 220
 F5_CHUNK_TARGET_CHARS = 180
 
+# --- Camera / "mirame" feature -----------------------------------------
+# Seconds to show the live camera preview before capturing the final frame.
+# Used by the look_at_camera tool when the user says "mirame" or similar.
+CAMERA_CAPTURE_DELAY_SECONDS = int(os.environ.get("GREAT_SAGE_CAMERA_DELAY", "5"))
+
 # --- Raphael RVC v2 post-processing ------------------------------------
 # Third-party model weights are intentionally not bundled or downloaded.
 RVC_ENABLED = os.environ.get("GREAT_SAGE_RVC_ENABLED", "true").lower() in {"1", "true", "yes", "on"}
 RVC_MODEL_PATH = os.environ.get("GREAT_SAGE_RVC_MODEL", os.path.join("voice_models", "raphael", "Raphael_200e_3400s.pth"))
 RVC_INDEX_PATH = os.environ.get("GREAT_SAGE_RVC_INDEX", os.path.join("voice_models", "raphael", "Raphael.index"))
-# Use the model author's own recommended inference baseline. That keeps
-# Great Sage aligned with the demo conditions before any extra tuning.
+# Use a moderate retrieval mix instead of the model demo's stronger default:
+# heavy index retrieval can make sibilants sound buzzy or stretched on speech.
 RVC_PITCH_METHOD = os.environ.get("GREAT_SAGE_RVC_PITCH", "rmvpe")
-RVC_INDEX_RATE = float(os.environ.get("GREAT_SAGE_RVC_INDEX_RATE", "0.8"))
+RVC_INDEX_RATE = float(os.environ.get("GREAT_SAGE_RVC_INDEX_RATE", "0.60"))
 RVC_PROTECT = float(os.environ.get("GREAT_SAGE_RVC_PROTECT", "0.33"))
 RVC_PITCH_SEMITONES = int(os.environ.get("GREAT_SAGE_RVC_PITCH_SEMITONES", "0"))
 RVC_OUTPUT_GAIN_DB = float(os.environ.get("GREAT_SAGE_RVC_OUTPUT_GAIN_DB", "0.0"))
 # Keep a small amount of the clean F5 signal after RVC. This is not an
 # audible "effect"; it restores consonant/transient detail when the trained
 # voice model introduces a little high-frequency grain or pitch residue.
-RVC_DRY_MIX = float(os.environ.get("GREAT_SAGE_RVC_DRY_MIX", "0.10"))
-# Gentle post-RVC clarity correction: reduce boxy/horn coloration and restore
-# a little presence without a large treble boost that would expose hiss.
-RVC_CLARITY_EQ = os.environ.get("GREAT_SAGE_RVC_CLARITY_EQ", "true").lower() in {"1", "true", "yes", "on"}
+RVC_DRY_MIX = float(os.environ.get("GREAT_SAGE_RVC_DRY_MIX", "0.22"))
+# Optional post-RVC clarity correction. It stays off by default to avoid
+# amplifying sibilance in the current voice model.
+RVC_CLARITY_EQ = os.environ.get("GREAT_SAGE_RVC_CLARITY_EQ", "false").lower() in {"1", "true", "yes", "on"}
 RVC_DEVICE = os.environ.get("GREAT_SAGE_RVC_DEVICE", "cuda")
 RVC_TAG = os.environ.get("GREAT_SAGE_RVC_TAG", "raphael")
 RVC_PYTHON = os.environ.get(

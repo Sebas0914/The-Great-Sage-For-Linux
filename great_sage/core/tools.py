@@ -87,6 +87,21 @@ def _list_running_apps() -> str:
     """Visible windows, not every background process."""
     if os.name != "nt":
         try:
+            import shutil
+            wmctrl = shutil.which("wmctrl")
+            if wmctrl:
+                result = subprocess.run([wmctrl, "-lx"], capture_output=True,
+                                        text=True, timeout=3, check=False)
+                windows = []
+                for line in result.stdout.splitlines():
+                    fields = line.split(None, 3)
+                    if len(fields) >= 3:
+                        label = fields[2]
+                        if len(fields) == 4 and fields[3].strip():
+                            label += " — " + fields[3].strip()
+                        windows.append(label)
+                if windows:
+                    return "; ".join(windows[:30])
             from great_sage.core.platform.factory import get_platform
             title = get_platform().windows.focused_window_title()
             return title or "No focused application window available."
@@ -166,6 +181,26 @@ def _resolve_app(name: str) -> Optional[str]:
 def _open_application(name: str) -> str:
     if os.name != "nt":
         try:
+            # Reuse a visible app window when it is already running. This
+            # avoids duplicate Spotify, Firefox, or file-manager instances
+            # on desktops whose launcher does not raise single-instance apps.
+            import re as _re
+            import shutil
+            wmctrl = shutil.which("wmctrl")
+            if wmctrl:
+                query = _re.sub(r"[^a-z0-9]", "", (name or "").casefold())
+                windows = subprocess.run([wmctrl, "-lx"], capture_output=True,
+                                          text=True, timeout=3, check=False)
+                for line in windows.stdout.splitlines():
+                    fields = line.split(None, 3)
+                    if len(fields) < 3:
+                        continue
+                    app_class = _re.sub(r"[^a-z0-9]", "", fields[2].casefold())
+                    if query and (query in app_class or app_class in query):
+                        subprocess.run([wmctrl, "-ia", fields[0]],
+                                       capture_output=True, timeout=3,
+                                       check=False)
+                        return "Activated the already-open %s window." % name
             from great_sage.core.platform.factory import get_platform
             return get_platform().launcher.open_application(name)
         except Exception as exc:
@@ -177,11 +212,38 @@ def _open_application(name: str) -> str:
             "Menu, so there is nothing to launch." % name)
     try:
         os.startfile(target)
+        # Best effort: try to bring the newly launched window to foreground
+        # after a short delay. This helps prevent the new window from
+        # appearing behind the current window.
+        if os.name == "nt":
+            import ctypes
+            import time as _time
+            _time.sleep(0.5)
+            user32 = ctypes.windll.user32
+            # Find the window by title matching the app name
+            def enum_windows_cb(hwnd, results):
+                if user32.IsWindowVisible(hwnd):
+                    length = user32.GetWindowTextLengthW(hwnd)
+                    if length > 0:
+                        buf = ctypes.create_unicode_buffer(length + 1)
+                        user32.GetWindowTextW(hwnd, buf, length + 1)
+                        title = buf.value
+                        if name.lower() in title.lower():
+                            results.append(hwnd)
+                return True
+            results = []
+            user32.EnumWindows(ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_int, ctypes.c_int)(enum_windows_cb), 0)
+            for hwnd in results:
+                try:
+                    user32.SetForegroundWindow(hwnd)
+                    break
+                except Exception:
+                    pass
     except Exception as exc:
         raise ToolError("Could not launch %s: %s" % (name, exc))
     return "Launched %s." % os.path.splitext(os.path.basename(target))[0]
 
-def _open_url(url: str) -> str:
+def _open_url(url: str, browser: str = "") -> str:
     u = (url or "").strip()
     if not u:
         raise ToolError("No URL given.")
@@ -192,6 +254,30 @@ def _open_url(url: str) -> str:
                 "Refused: only http and https can be opened, not %s."
                 % u.split("://")[0])
         u = "https://" + u
+    browser = (browser or "").strip().casefold()
+    if browser in {"firefox", "mozilla firefox"}:
+        if os.name == "nt":
+            import webbrowser
+            try:
+                opened = webbrowser.get("firefox").open(u)
+            except webbrowser.Error as exc:
+                raise ToolError("Firefox is not available on this computer.") from exc
+            if not opened:
+                raise ToolError("Firefox could not open %s." % u)
+        else:
+            import shutil
+            executable = shutil.which("firefox") or shutil.which("firefox-esr")
+            if not executable:
+                raise ToolError("Firefox is not installed on this computer.")
+            subprocess.Popen(
+                # Firefox forwards this to an existing instance and creates
+                # a tab there. --new-window split the user's session and
+                # made it look as if Great Sage had ignored the open tab.
+                [executable, "--new-tab", u], stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+        return "Opened %s in Firefox." % u
     if os.name != "nt":
         try:
             from great_sage.core.platform.factory import get_platform
@@ -202,6 +288,207 @@ def _open_url(url: str) -> str:
     if not webbrowser.open(u):
         raise ToolError("No browser available to open %s." % u)
     return "Opened %s." % u
+
+
+def _open_whatsapp(browser: str = "firefox") -> str:
+    """Open WhatsApp Web in the requested browser."""
+    return _open_url("https://web.whatsapp.com/", browser=browser)
+
+
+def _send_whatsapp_message(contact: str, message: str) -> str:
+    """Send through the user's logged-in WhatsApp Web profile.
+    
+    On Linux: uses Selenium automation (whatsapp_web.py).
+    On Windows: opens WhatsApp Web and provides guidance for manual send.
+    """
+    if os.name == "nt":
+        # On Windows, open WhatsApp Web and give instructions
+        # since full automation requires Selenium/Playwright setup
+        _open_url("https://web.whatsapp.com/", browser="firefox")
+        if contact and message:
+            return (
+                f"Opened WhatsApp Web. To send your message to '{contact}':\n"
+                f"1. Search for the contact '{contact}' in the chat list\n"
+                f"2. Type your message: '{message}'\n"
+                f"3. Press Enter to send\n\n"
+                f"Tip: Pin the contact for faster access next time."
+            )
+        return "Opened WhatsApp Web. Log in if needed, then send your message manually."
+    
+    # Linux path - existing Selenium automation
+    try:
+        from great_sage.core.whatsapp_web import WhatsAppError, send_message
+        return send_message(contact, message)
+    except Exception as exc:
+        raise ToolError("WhatsApp message was not sent: %s" % exc) from exc
+
+
+def _spotify_search_and_play(query: str) -> str:
+    """Search an already-running Spotify window and open the first match."""
+    if os.name == "nt":
+        raise ToolError("Spotify desktop control is currently supported on Linux.")
+    import shutil
+    import re as _re
+
+    wmctrl = shutil.which("wmctrl")
+    xdotool = shutil.which("xdotool")
+    if not wmctrl or not xdotool:
+        raise ToolError("Spotify control needs wmctrl and xdotool on Linux.")
+    query = " ".join((query or "").split()).strip()
+    if not query:
+        raise ToolError("I need a song title or artist to search Spotify.")
+
+    def spotify_windows():
+        result = subprocess.run([wmctrl, "-lx"], capture_output=True,
+                                text=True, timeout=3, check=False)
+        return [line.split()[0] for line in result.stdout.splitlines()
+                if _re.search(r"spotify", line, _re.I)]
+
+    windows = spotify_windows()
+    if not windows:
+        from great_sage.core.platform.factory import get_platform
+        get_platform().launcher.open_application("Spotify")
+        deadline = time.monotonic() + 20
+        while time.monotonic() < deadline and not windows:
+            time.sleep(0.25)
+            windows = spotify_windows()
+    if not windows:
+        raise ToolError("Spotify did not open a controllable desktop window.")
+
+    window = windows[0]
+    subprocess.run([wmctrl, "-ia", window], capture_output=True,
+                   timeout=3, check=False)
+    time.sleep(0.25)
+    subprocess.run([xdotool, "key", "--clearmodifiers", "ctrl+l"],
+                   check=True, timeout=3)
+    subprocess.run([xdotool, "key", "--clearmodifiers", "ctrl+a"],
+                   check=True, timeout=3)
+    subprocess.run([xdotool, "type", "--clearmodifiers", "--delay", "12",
+                    query], check=True, timeout=10)
+    time.sleep(0.6)
+
+    # Search suggestions can be selected without submitting Return (which
+    # may activate an unrelated recent search). Use the visible text and
+    # click only a row matching multiple words from the requested track.
+    tesseract = shutil.which("tesseract")
+    spectacle = shutil.which("spectacle")
+    if not tesseract or not spectacle:
+        return "FAILED: Spotify search is open, but screen text recognition is unavailable; playback was not started."
+
+    def visible_lines():
+        fd, shot = tempfile.mkstemp(prefix="great-sage-spotify-", suffix=".png")
+        os.close(fd)
+        try:
+            capture = subprocess.run(
+                [spectacle, "--background", "--nonotify", "--fullscreen",
+                 "--output", shot], capture_output=True, text=True,
+                timeout=12, check=False)
+            if capture.returncode != 0 or not os.path.getsize(shot):
+                return []
+            ocr = subprocess.run([tesseract, shot, "stdout", "tsv"],
+                                 capture_output=True, text=True,
+                                 timeout=8, check=False)
+            rows = {}
+            for line in ocr.stdout.splitlines()[1:]:
+                cols = line.split("\t")
+                if len(cols) < 12 or not cols[11].strip():
+                    continue
+                key = tuple(cols[1:5])
+                row = rows.setdefault(key, {"words": [], "left": None,
+                                            "top": None, "right": 0,
+                                            "bottom": 0})
+                row["words"].append(cols[11].strip())
+                left, top = int(cols[6]), int(cols[7])
+                row["left"] = left if row["left"] is None else min(row["left"], left)
+                row["top"] = top if row["top"] is None else min(row["top"], top)
+                row["right"] = max(row["right"], left + int(cols[8]))
+                row["bottom"] = max(row["bottom"], top + int(cols[9]))
+            return list(rows.values())
+        finally:
+            try:
+                os.unlink(shot)
+            except OSError:
+                pass
+
+    wanted = _re.sub(r"[^\w ]", " ", query.casefold())
+    wanted_words = [w for w in wanted.split() if len(w) > 2]
+
+    def matching_rows(rows, phase):
+        if phase == "suggestion":
+            area = lambda row: row["top"] > 190 and row["top"] < 0.70 * 1080
+        else:
+            area = lambda row: (0.25 * 1920 < row["left"] < 0.62 * 1920
+                                and 0.25 * 1080 < row["top"] < 0.76 * 1080)
+        matches = []
+        for row in rows:
+            if not area(row):
+                continue
+            phrase = " ".join(row["words"]).casefold()
+            flat = _re.sub(r"[^\w ]", " ", phrase)
+            score = sum(word in flat for word in wanted_words)
+            if wanted_words and score >= min(2, len(wanted_words)):
+                matches.append((score, row))
+        return matches
+
+    rows = visible_lines()
+    suggestions = matching_rows(rows, "suggestion")
+    if not suggestions:
+        return "FAILED: Searched Spotify for %r, but no matching song result was visible; playback was not started." % query
+    _, suggestion = max(suggestions, key=lambda item: item[0])
+    sx = suggestion["left"] + (suggestion["right"] - suggestion["left"]) // 2
+    sy = suggestion["top"] + (suggestion["bottom"] - suggestion["top"]) // 2
+    subprocess.run([xdotool, "mousemove", str(sx), str(sy), "click", "1"],
+                   check=True, timeout=4)
+    time.sleep(0.7)
+
+    rows = visible_lines()
+    tracks = matching_rows(rows, "track")
+    if not tracks:
+        return "FAILED: Spotify opened the search result, but the exact track row was not visible; playback was not started."
+    _, track = max(tracks, key=lambda item: item[0])
+    tx = track["left"] + (track["right"] - track["left"]) // 2
+    ty = track["top"] + (track["bottom"] - track["top"]) // 2
+    subprocess.run([xdotool, "mousemove", str(tx), str(ty), "click",
+                    "--repeat", "2", "--delay", "110", "1"],
+                   check=True, timeout=4)
+    time.sleep(0.8)
+    current = subprocess.run([wmctrl, "-l"], capture_output=True, text=True,
+                             timeout=3, check=False).stdout.casefold()
+    expected_title = _re.sub(r"[^a-z0-9 ]", " ", query.casefold())
+    expected_title = " ".join(w for w in expected_title.split()
+                               if w not in {"de", "the", "and"})
+    if all(word in _re.sub(r"[^a-z0-9 ]", " ", current)
+           for word in expected_title.split() if len(word) > 2):
+        return "Started the matching Spotify track %r." % query
+    return ("FAILED: Searched Spotify for %r and left the results open, but "
+            "could not verify an exact result, so playback was not started." % query)
+
+
+def _spotify_args(text: str):
+    low = (text or "").casefold()
+    if not _re.search(r"\bspotify\b", low):
+        return None
+    if not _re.search(r"\b(?:pon|ponme|pongas|pongan|poner|reproduce|reproducir|play|busca|buscar|escribe|escribas|write|canci[oó]n|m[uú]sica)\b", low):
+        return None
+    match = _re.search(r"\b(?:spotify\b.*?\b(?:pon(?:gas|me)?|reproduce|play|busca|buscar|escrib(?:e|as))\b|"
+                       r"(?:pon(?:gas|me)?|reproduce|play|busca|buscar|escrib(?:e|as))\b.*?\bspotify\b)(?P<tail>.+)$",
+                       text or "", _re.I)
+    query = match.group("tail") if match else ""
+    query = _re.sub(r"^\s*(?:la\s+)?(?:canci[oó]n|tema|m[uú]sica)\s+(?:de\s+)?", "", query, flags=_re.I)
+    query = _re.sub(r"\s+(?:por favor|ahorita|ahora)$", "", query, flags=_re.I).strip(" ,.:;?!\"“”")
+    # Whisper commonly collapses "Party Anthem" to "al Tianton" in this
+    # song title; normalize that phonetic rendering before Spotify search.
+    query = _re.sub(r"\bal\s+tianton\b", "Party Anthem", query, flags=_re.I)
+    if not query:
+        before_spotify = (text or "").split("spotify", 1)[0]
+        fallback = _re.search(
+            r"(?:m[uú]sica|canci[oó]n|tema)\s+(?:de\s+)?(?P<query>[^,.!?]+)$",
+            before_spotify, _re.I,
+        )
+        query = fallback.group("query").strip(" ,.:;?!\"“”") if fallback else ""
+    if not query:
+        return None
+    return {"__tool": "spotify_search_and_play", "query": query}
 
 def _youtube_first_video(query):
     """The watch URL of the top result, or None.
@@ -301,6 +588,62 @@ def _search_files(query: str) -> str:
     return chr(10).join(hits)
 
 
+def _read_file(path: str) -> str:
+    """Read a user-requested local text file by its supplied path."""
+    target = os.path.abspath(os.path.expandvars(os.path.expanduser((path or "").strip())))
+    if not target or not os.path.isfile(target):
+        raise ToolError("That file does not exist or is not a regular file.")
+    try:
+        with open(target, "r", encoding="utf-8", errors="replace") as fh:
+            content = fh.read(1_000_000)
+    except OSError as exc:
+        raise ToolError("Could not read %s: %s" % (target, exc)) from exc
+    if len(content) >= 1_000_000:
+        content += "\n[Output truncated at 1,000,000 characters.]"
+    return "FILE: %s\n%s" % (target, content)
+
+
+def _write_file(path: str, content: str) -> str:
+    """Write the requested text to a local path, creating parent folders."""
+    target = os.path.abspath(os.path.expandvars(os.path.expanduser((path or "").strip())))
+    if not target:
+        raise ToolError("No file path was given.")
+    try:
+        os.makedirs(os.path.dirname(target), exist_ok=True)
+        with open(target, "w", encoding="utf-8", newline="") as fh:
+            fh.write(content or "")
+    except OSError as exc:
+        raise ToolError("Could not write %s: %s" % (target, exc)) from exc
+    return "Wrote %d characters to %s." % (len(content or ""), target)
+
+
+def _run_command(command: str, cwd: str = "") -> str:
+    """Run a requested shell command as the current user."""
+    command = (command or "").strip()
+    if not command:
+        raise ToolError("No command was given.")
+    directory = os.path.abspath(os.path.expandvars(os.path.expanduser(cwd.strip()))) if cwd.strip() else os.path.expanduser("~")
+    if not os.path.isdir(directory):
+        raise ToolError("Working directory does not exist: %s" % directory)
+    try:
+        result = subprocess.run(
+            command, shell=True, cwd=directory,
+            capture_output=True, text=True, errors="replace", timeout=120,
+        )
+    except subprocess.TimeoutExpired as exc:
+        out = exc.stdout or ""
+        if isinstance(out, bytes):
+            out = out.decode(errors="replace")
+        raise ToolError("Command timed out after 120 seconds.\n%s" % out[-12000:]) from exc
+    except OSError as exc:
+        raise ToolError("Could not run command: %s" % exc) from exc
+    output = (result.stdout or "")
+    if result.stderr:
+        output += ("\n" if output else "") + "STDERR:\n" + result.stderr
+    output = output[-20000:] or "(no output)"
+    return "Exit code %d\n%s" % (result.returncode, output)
+
+
 REGISTRY: List[Tool] = [
     Tool("get_time", "Get the current local date and time.",
          {"type": "object", "properties": {}}, _get_time, SAFE),
@@ -315,9 +658,34 @@ REGISTRY: List[Tool] = [
          "websites, and anything the user asks to open online.",
          {"type": "object",
           "properties": {"url": {"type": "string",
-                                 "description": "Full URL or domain"}},
+                                 "description": "Full URL or domain"},
+                         "browser": {"type": "string",
+                                     "description": "Optional browser, e.g. Firefox"}},
           "required": ["url"]},
          _open_url, SAFE),
+    Tool("open_whatsapp",
+         "Open the WhatsApp Web page in Firefox when the user asks to open "
+         "WhatsApp or says the WhatsApp application is missing.",
+         {"type": "object", "properties": {
+             "browser": {"type": "string", "enum": ["firefox"]}},
+          "required": []}, _open_whatsapp, SAFE),
+    Tool("send_whatsapp_message",
+         "Send a message to a saved WhatsApp contact by exact display name. "
+         "Use only when the user explicitly asks to send the supplied text. "
+         "The recipient chat is verified before sending.",
+         {"type": "object", "properties": {
+             "contact": {"type": "string", "description": "Exact saved contact name"},
+             "message": {"type": "string", "description": "Exact message to send"}},
+          "required": ["contact", "message"]},
+         _send_whatsapp_message, SAFE),
+    Tool("spotify_search_and_play",
+         "Search in the user's existing Spotify desktop window for the exact "
+         "requested song and artist, then open a visible matching result. "
+         "Use when asked to play or find music in Spotify.",
+         {"type": "object", "properties": {
+             "query": {"type": "string", "description": "Song title and artist"}},
+          "required": ["query"]},
+         _spotify_search_and_play, SAFE),
     Tool("open_application",
          "Launch an installed application by name, for example Discord, "
          "Reaper, Chrome.",
@@ -350,6 +718,17 @@ REGISTRY: List[Tool] = [
           "properties": {"query": {"type": "string"}},
           "required": ["query"]},
          _search_files, SAFE),
+    Tool("read_file", "Read a local text file at the path the user names.",
+         {"type": "object", "properties": {"path": {"type": "string"}},
+          "required": ["path"]}, _read_file, SAFE),
+    Tool("write_file", "Create or replace a local text file at the path the user names.",
+         {"type": "object", "properties": {
+             "path": {"type": "string"}, "content": {"type": "string"}},
+          "required": ["path", "content"]}, _write_file, SAFE),
+    Tool("run_command", "Run a shell command on this computer as the current user and return its output. Use only for a command the user asked to run.",
+         {"type": "object", "properties": {
+             "command": {"type": "string"}, "cwd": {"type": "string"}},
+          "required": ["command"]}, _run_command, SAFE),
 ]
 
 BY_NAME: Dict[str, Tool] = {t.name: t for t in REGISTRY}
@@ -413,6 +792,11 @@ _TRIGGERS = (
     "running", "what's open", "whats open", "apps", "programs", "windows",
     "folder", "directory", "file", "downloads", "desktop", "documents",
     "youtube", "google", "browser", "website", "url", "link", ".com",
+    "whatsapp", "firefox", "abre ", "abrir ", "envíale ", "enviale ",
+    "manda mensaje", "escribe en ", "spotify", "reproduce", "reproducir",
+    "pon la canción", "pon la musica", "pon música", "song", "track",
+    "pantalla", "qué ves", "que ves", "qué hay", "que hay",
+    "mira la pantalla", "lee la pantalla", "revisa la pantalla",
 )
 
 
@@ -461,7 +845,8 @@ def take_pending_images() -> List[str]:
 
 
 def _capture_camera() -> str:
-    """Open the native camera preview for ~3 seconds and keep the final frame."""
+    """Open the native camera preview for a configurable delay and keep the final frame."""
+    from great_sage.config import settings
     root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     script = os.path.join(root, "camera_window.py")
     if not os.path.exists(script):
@@ -471,9 +856,10 @@ def _capture_camera() -> str:
     fd, output = tempfile.mkstemp(prefix="great_sage_camera_", suffix=".jpg")
     os.close(fd)
     try:
+        delay = getattr(settings, "CAMERA_CAPTURE_DELAY_SECONDS", 5)
         proc = subprocess.run(
-            [interpreter, script, "--output", output, "--seconds", "3"],
-            cwd=root, timeout=12, check=False,
+            [interpreter, script, "--output", output, "--seconds", str(delay)],
+            cwd=root, timeout=delay + 10, check=False,
         )
         if proc.returncode != 0 or not os.path.exists(output):
             raise ToolError("The camera could not be opened or no final frame was captured.")
@@ -483,9 +869,9 @@ def _capture_camera() -> str:
             raise ToolError("The camera returned an empty frame.")
         _PENDING_IMAGES.append(base64.b64encode(data).decode())
         return (
-            "Camera capture completed. The final frame is attached to this turn. "
-            "Give the opinion requested by the user, in Raphael's casual voice; "
-            "do not turn it into a clinical or exhaustive physical description."
+            "Camera capture done. Photo attached. "
+            "Give a quick, casual reaction - like you're glancing at them and commenting naturally. "
+            "One or two sentences max. No clinical description unless they explicitly ask."
         )
     except subprocess.TimeoutExpired as exc:
         raise ToolError("The camera preview timed out.") from exc
@@ -513,6 +899,29 @@ def _focused_window() -> str:
         return buf.value.strip() or "an untitled window"
     except Exception:
         return "unknown"
+
+
+def _ocr_visible_text(image) -> str:
+    """Extract readable screen text as a fast fallback for text-only models."""
+    try:
+        import io
+        import shutil
+        tesseract = shutil.which("tesseract")
+        if not tesseract:
+            return ""
+        buf = io.BytesIO()
+        image.convert("RGB").save(buf, format="PNG")
+        result = subprocess.run(
+            [tesseract, "stdin", "stdout", "-l", "eng"],
+            input=buf.getvalue(), capture_output=True, timeout=8, check=False,
+        )
+        if result.returncode != 0:
+            return ""
+        raw = result.stdout.decode(errors="replace")
+        return " ".join(raw.split())[:6000]
+    except Exception:
+        log.debug("Screen OCR was unavailable", exc_info=True)
+        return ""
 
 def _capture(region: str = "") -> str:
     """Screenshot the desktop (or just the focused window) for the model.
@@ -556,6 +965,7 @@ def _capture(region: str = "") -> str:
                 from PIL import Image
                 img = Image.open(raw_path).convert("RGB")
                 img.thumbnail((1280, 1280))
+                ocr = _ocr_visible_text(img)
                 import base64
                 import io as _io
                 buf = _io.BytesIO()
@@ -563,8 +973,9 @@ def _capture(region: str = "") -> str:
                 _PENDING_IMAGES.append(base64.b64encode(buf.getvalue()).decode())
                 what = "the focused window" if region.strip().lower() in ("window", "focused", "active") else "the whole screen"
                 return ("Captured %s (%dx%d), showing %r. The image is attached to this "
-                        "turn - describe what is actually visible in it."
-                        % (what, img.size[0], img.size[1], _focused_window()))
+                        "turn - describe only what is visible. Visible text from OCR: %s"
+                        % (what, img.size[0], img.size[1], _focused_window(),
+                           ocr or "(no readable text detected)"))
         except ToolError:
             raise
         except Exception as exc:
@@ -576,6 +987,7 @@ def _capture(region: str = "") -> str:
         raise ToolError("Could not capture the screen: %s" % exc)
     img = img.convert("RGB")
     img.thumbnail((1280, 1280))
+    ocr = _ocr_visible_text(img)
     import base64
     import io as _io
     buf = _io.BytesIO()
@@ -583,8 +995,9 @@ def _capture(region: str = "") -> str:
     _PENDING_IMAGES.append(base64.b64encode(buf.getvalue()).decode())
     what = "the focused window" if box else "the whole screen"
     return ("Captured %s (%dx%d), showing %r. The image is attached to this "
-            "turn - describe what is actually visible in it."
-            % (what, img.size[0], img.size[1], _focused_window()))
+            "turn - describe only what is visible. Visible text from OCR: %s"
+            % (what, img.size[0], img.size[1], _focused_window(),
+               ocr or "(no readable text detected)"))
 
 
 REGISTRY.append(Tool(
@@ -621,6 +1034,12 @@ _TRIGGERS = _TRIGGERS + (
     "mírame", "mirame", "cómo me veo", "como me veo",
     "on my screen", "screenshot", "this error", "focused", "what am i",
     "what is this", "whats this", "translate",
+    "abre ", "abrir ", "inicia ", "lanza ", "ejecuta ", "abre el ",
+    "abre la ", "lee el archivo", "lee este archivo", "escribe en",
+    "guarda en", "ejecuta el comando", "ejecuta comando",
+    "read file", "write file", "execute command", "run command",
+    "run this", "type this", "click on", "lee ", "leer ", "escribe ",
+    "escribir ", "revisa ", "revisar ", "no puedo abrir",
 )
 
 
@@ -874,7 +1293,114 @@ _TRIGGERS = _TRIGGERS + (
 
 import re as _re
 
+
+def _whatsapp_args(match):
+    """Route clear WhatsApp intents without asking the model to guess tools."""
+    text = match.string or ""
+    sent = _re.search(
+        r"\b(?:env[ií]a|enviar|manda|escribe)\s*(?:le\s*)?a\s+"
+        r"(?P<contact>[^,:;.!?\n]{1,70}?)\s+"
+        r"(?:este|el siguiente)\s+mensaje\s*[:,-]\s*(?P<message>.+)$",
+        text, _re.I,
+    )
+    if not sent:
+        sent = _re.search(
+            r"\b(?:env[ií]a|enviar|manda|escribe)\s+(?:un\s+)?mensaje\s+a\s+"
+            r"(?P<contact>[^,:;.!?\n]{1,70})\s*:\s*(?P<message>.+)$",
+            text, _re.I,
+        )
+    if sent:
+        contact = _re.sub(r"^(?:el|la|los|las)\s+", "", sent.group("contact").strip(), flags=_re.I)
+        body = sent.group("message").strip().strip('"“”')
+        if contact and body:
+            return {"__tool": "send_whatsapp_message",
+                    "contact": contact, "message": body}
+
+    # Spoken Spanish varies a lot here, especially after local STT. Accept
+    # the common "mándale un mensaje a X diciéndole Y" and
+    # "escríbele a X que diga Y" shapes without guessing either field.
+    spoken = _re.search(
+        r"\b(?:env[ií]a|manda|m[aá]ndale|escr[ií]bele|escribe)\s+"
+        r"(?:un\s+)?mensaje\s+(?:a|para)\s+"
+        r"(?P<contact>[^,:;.!?\n]{1,70}?)\s+"
+        r"(?:dici[eé]ndole|que\s+(?:diga|dice)|con\s+el\s+texto)\s+"
+        r"(?P<message>.+)$", text, _re.I,
+    )
+    if not spoken:
+        spoken = _re.search(
+            r"\b(?:env[ií]a|manda|m[aá]ndale|escr[ií]bele|escribe)\s+"
+            r"(?:le\s+)?a\s+(?P<contact>[^,:;.!?\n]{1,70}?)\s+"
+            r"(?:un\s+)?mensaje\s+(?:que\s+(?:diga|dice)|dici[eé]ndole)\s+"
+            r"(?P<message>.+)$", text, _re.I,
+        )
+    if spoken:
+        contact = _re.sub(r"^(?:el|la|los|las)\s+", "", spoken.group("contact").strip(), flags=_re.I)
+        body = spoken.group("message").strip().strip('"“”')
+        if contact and body:
+            return {"__tool": "send_whatsapp_message",
+                    "contact": contact, "message": body}
+
+    whisper_spoken = _re.search(
+        r"\bmensaje\s+(?P<contact>[\wáéíóúñüÁÉÍÓÚÑÜ .'-]{2,60}?)\s+y\s+"
+        r"(?:siendo|diciendo|dici[eé]ndole|de\s+sendole)\s+"
+        r"(?:le\s*hola|le?ola|hola)\s*,?\s*(?P<message>.+)$", text, _re.I,
+    )
+    if whisper_spoken:
+        contact = whisper_spoken.group("contact").strip(" ,.-")
+        body = "Hola " + whisper_spoken.group("message").strip().strip('"“”')
+        if contact and body:
+            return {"__tool": "send_whatsapp_message",
+                    "contact": contact, "message": body}
+
+    # Whisper sometimes renders the spoken "diciéndole" as "de sendole".
+    # Keep this recovery narrow: it requires a WhatsApp mention, a contact
+    # immediately before it, and explicit evidence that message content
+    # follows. The sender still verifies the exact contact in WhatsApp.
+    misheard = _re.search(
+        r"\b(?:es|ser[ií]a)\s+(?:a\s+)?(?P<contact>[\wáéíóúñüÁÉÍÓÚÑÜ .'-]{1,60}?)"
+        r"\s*,?\s+(?:en\s+)?whats\s*app\b.*?"
+        r"\b(?:y\s+)?(?:de\s+sendole|dici[eé]ndole|diciendo\s+le)\s*[:, -]*"
+        r"(?P<message>.+)$", text, _re.I,
+    )
+    if misheard:
+        contact = misheard.group("contact").strip(" ,.-")
+        contact = _re.sub(r"^(?:el|la|los|las)\s+", "", contact, flags=_re.I)
+        body = misheard.group("message").strip().strip('"“”')
+        if contact and body:
+            return {"__tool": "send_whatsapp_message",
+                    "contact": contact, "message": body}
+
+    lower = text.casefold()
+    send_intent = any(verb in lower for verb in (
+        "envia", "enví", "manda", "mánda", "escribe", "escribi", "escríbe",
+        "escríb", "escriba",
+        "mensaje", "send", "message",
+    ))
+    if send_intent:
+        # Never silently downgrade a request to send into merely opening the
+        # site. Return a failed send action so the model gets the actual
+        # request and can ask for whichever detail STT did not capture.
+        return {"__tool": "send_whatsapp_message", "contact": "", "message": ""}
+    if any(verb in lower for verb in (
+        "abre", "abrir", "open", "mete", "poner", "pon ", "pagina",
+        "página",
+    )):
+        return {"__tool": "open_whatsapp", "browser": "firefox"}
+    return None
+
 _PREROUTE = (
+    # WhatsApp instructions often include several clauses and the actual
+    # message, so the generic "open <app>" pattern cannot safely parse them.
+    (_re.compile(r"\bwhats\s*app\b", _re.I),
+     "open_whatsapp", lambda m: _whatsapp_args(m)),
+    # Route common Spanish voice commands directly to the installed-app
+    # launcher instead of waiting for a model to decide whether it can.
+    (_re.compile(r"\b(?:abre|abrir|inicia|iniciar|lanza|lanzar|ejecuta|ejecutar|"
+                 r"puedes\s+abrir|podrías\s+abrir|podrias\s+abrir)\s+"
+                 r"(?:por\s+favor\s+)?(?:el\s+|la\s+|los\s+|las\s+|mi\s+|mis\s+)?"
+                 r"(?P<t>[\wáéíóúñüÁÉÍÓÚÑÜ ._-]{2,60}?)"
+                 r"(?:\s+por\s+favor)?[?.!]*$", _re.I),
+     "__open_something", lambda m: _open_something_args(m)),
     (_re.compile(r"\b(what|whats|what's)\s+(the\s+)?(time|date)\b|"
                  r"\bwhat\s+day\s+is\s+it\b|\btime\s+is\s+it\b", _re.I),
      "get_time", {}),
@@ -1099,15 +1625,17 @@ def _youtube_args(m):
 
 
 # Words that mean a place on this machine rather than an app or a site.
-_FOLDERISH = ("folder", "directory", "downloads", "desktop", "documents",
-              "pictures", "videos", "music")
+_FOLDERISH = ("folder", "directory", "carpeta", "directorio",
+              "downloads", "desktop", "documents", "descargas",
+              "escritorio", "documentos", "pictures", "videos", "music")
 
 
 # A question ABOUT opening something is not an instruction to open it.
 # "how do i open a pull request" would otherwise launch an application
 # called "a pull request" - which fails, but only after trying.
 _ASKING = ("how ", "why ", "what ", "when ", "where ", "who ", "which ",
-           "do i ", "should i ", "can i ", "could i ", "is there ")
+           "do i ", "should i ", "can i ", "could i ", "is there ",
+           "no puedo ", "cómo puedo ", "como puedo ")
 
 
 def _open_something_args(m):
@@ -1127,10 +1655,29 @@ def _open_something_args(m):
         # folder tool resolves a NAME against the home directory - so the
         # trailing noun has to come off or it looks for a directory
         # literally called "downloads folder" and fails.
-        name = t
-        for tail in ("folder", "directory", "dir"):
+        name = _re.sub(r"^(?:el|la|los|las|mi|mis)\s+", "", t,
+                       flags=_re.I)
+        name = _re.sub(r"^(?:carpeta|directorio)\s+", "", name,
+                       flags=_re.I)
+        for tail in ("folder", "directory", "dir", "carpeta", "directorio"):
             if name.lower().endswith(" " + tail):
                 name = name[: -(len(tail) + 1)].strip()
+                break
+        user_folders = {
+            "desktop": ("Desktop", "Escritorio"),
+            "documents": ("Documents", "Documentos"),
+            "downloads": ("Downloads", "Descargas"),
+            "pictures": ("Pictures", "Imágenes", "Imagenes"),
+            "videos": ("Videos", "Vídeos"),
+            "music": ("Music", "Música", "Musica"),
+        }
+        for key, variants in user_folders.items():
+            if name.casefold() in {v.casefold() for v in variants}:
+                for variant in variants:
+                    candidate = os.path.join(os.path.expanduser("~"), variant)
+                    if os.path.isdir(candidate):
+                        name = key  # Keep canonical name; _open_folder resolves it
+                        break
                 break
         return {"__tool": "open_folder", "path": name or t}
     if "." in low and " " not in low:          # looks like a domain
@@ -1150,6 +1697,7 @@ _KNOWN_SITES = {
     "twitch": "https://www.twitch.tv",
     "netflix": "https://www.netflix.com",
     "chatgpt": "https://chatgpt.com",
+    "whatsapp": "https://web.whatsapp.com/",
 }
 
 
@@ -1178,6 +1726,30 @@ def preroute(text: str):
     query. Returning None from that callable skips the entry, for the
     cases a regex alone cannot separate.
     """
+    # Screen questions should not depend on the model choosing a tool. This
+    # also catches common Whisper renderings such as "que resa ... pantalla".
+    if _re.search(
+        r"\b(?:mira|revisa|lee|describe|qu[eé])\b.{0,70}\bpantalla\b|"
+        r"\bpantalla\b.{0,60}\b(?:qu[eé]|ves|dice|aparece|hay)\b|"
+        r"\b(?:look at|read|check|what do you see)\b.{0,50}\bscreen\b",
+        text or "", _re.I,
+    ):
+        return [("look_at_screen", {})]
+
+    # Handle WhatsApp as one cohesive request before generic open-app rules
+    # can interpret trailing words such as "página de WhatsApp" as an app.
+    whatsapp_match = _PREROUTE[0][0].search(text or "")
+    if whatsapp_match:
+        built = _whatsapp_args(whatsapp_match)
+        if built is not None:
+            tool_name = built.pop("__tool", _PREROUTE[0][1])
+            return [(tool_name, built)]
+
+    spotify = _spotify_args(text or "")
+    if spotify is not None:
+        tool_name = spotify.pop("__tool", "spotify_search_and_play")
+        return [(tool_name, spotify)]
+
     out = []
     for pattern, name, args in _PREROUTE:
         m = pattern.search(text or "")
@@ -1322,11 +1894,373 @@ REGISTRY.append(Tool(
      "required": ["task_id"]},
     _cancel_task, SAFE))
 
+
+# --- Game launching tools ----------------------------------------------------
+# These use platform-specific launchers and URL protocols to start games.
+# Steam uses steam://rungameid/ or steam://run/
+# Roblox uses roblox-player: protocol
+# Epic uses com.epicgames.launcher: protocol
+# Battle.net uses battle.net:// protocol
+
+def _launch_steam_game(query: str) -> str:
+    """Launch a Steam game by name or app ID."""
+    if os.name != "nt":
+        raise ToolError("Steam game launching is currently supported on Windows only.")
+    # Known Steam App IDs for popular games
+    steam_games = {
+        "counter-strike": 730, "cs2": 730, "cs:go": 730,
+        "dota 2": 570, "dota": 570,
+        "team fortress 2": 440, "tf2": 440,
+        "garrys mod": 4000, "gmod": 4000,
+        "rust": 252490,
+        "ark": 346110, "ark survival": 346110,
+        "payday 2": 218620,
+        "left 4 dead 2": 550, "l4d2": 550,
+        "portal 2": 620,
+        "half-life 2": 220,
+        "skyrim": 72850, "skyrim se": 489830,
+        "fallout 4": 377160,
+        "cyberpunk 2077": 1091500,
+        "elden ring": 1245620,
+        "baldur's gate 3": 1086940, "bg3": 1086940,
+        "hades": 1145360,
+        "stardew valley": 413150,
+        "terraria": 105600,
+        "factorio": 427520,
+        "rimworld": 294100,
+        "monster hunter world": 582010, "mhw": 582010,
+        "destiny 2": 1085660,
+        "warframe": 230410,
+        "apex legends": 1172470,
+        "rocket league": 252950,
+    }
+    q = (query or "").strip().lower()
+    if not q:
+        raise ToolError("Specify a game name to launch on Steam.")
+    
+    # Try exact match first
+    if q in steam_games:
+        app_id = steam_games[q]
+        subprocess.Popen(["steam", f"steam://rungameid/{app_id}"], 
+                        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return f"Launching {q} on Steam."
+    
+    # Try partial match
+    matches = [name for name in steam_games if q in name or name in q]
+    if len(matches) == 1:
+        app_id = steam_games[matches[0]]
+        subprocess.Popen(["steam", f"steam://rungameid/{app_id}"],
+                        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return f"Launching {matches[0]} on Steam."
+    elif matches:
+        raise ToolError(f"Ambiguous game name. Could be: {', '.join(matches)}. Be more specific.")
+    
+    # Fallback: open Steam and search
+    subprocess.Popen(["steam", f"steam://search/{q}"],
+                    stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    return f"Opened Steam search for '{q}'. Click the game to launch."
+
+
+def _launch_roblox() -> str:
+    """Launch Roblox Player."""
+    if os.name != "nt":
+        raise ToolError("Roblox launching is currently supported on Windows only.")
+    try:
+        # Roblox uses the roblox-player: protocol
+        subprocess.Popen(["cmd", "/c", "start", "roblox-player:"],
+                        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return "Launching Roblox."
+    except Exception as exc:
+        raise ToolError(f"Could not launch Roblox: {exc}")
+
+
+def _launch_epic_game(query: str) -> str:
+    """Launch an Epic Games game."""
+    if os.name != "nt":
+        raise ToolError("Epic Games launching is currently supported on Windows only.")
+    # Epic uses com.epicgames.launcher: protocol
+    subprocess.Popen(["cmd", "/c", "start", "com.epicgames.launcher:"],
+                    stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    return "Opened Epic Games Launcher. Select your game to launch."
+
+
+def _launch_battlenet_game(query: str) -> str:
+    """Launch a Battle.net game."""
+    if os.name != "nt":
+        raise ToolError("Battle.net launching is currently supported on Windows only.")
+    # Battle.net uses battle.net:// protocol
+    subprocess.Popen(["cmd", "/c", "start", "battle.net://"],
+                    stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    return "Opened Battle.net. Select your game to launch."
+
+
+def _launch_gog_game(query: str) -> str:
+    """Launch a GOG Galaxy game."""
+    if os.name != "nt":
+        raise ToolError("GOG Galaxy launching is currently supported on Windows only.")
+    # GOG uses goggalaxy: protocol
+    subprocess.Popen(["cmd", "/c", "start", "goggalaxy:"],
+                    stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    return "Opened GOG Galaxy. Select your game to launch."
+
+
+def _launch_game_launcher(launcher: str) -> str:
+    """Generic launcher opener for game platforms."""
+    launchers = {
+        "steam": ("steam", "Steam"),
+        "roblox": ("roblox-player:", "Roblox"),
+        "epic": ("com.epicgames.launcher:", "Epic Games Launcher"),
+        "battlenet": ("battle.net://", "Battle.net"),
+        "battle.net": ("battle.net://", "Battle.net"),
+        "gog": ("goggalaxy:", "GOG Galaxy"),
+        "gog galaxy": ("goggalaxy:", "GOG Galaxy"),
+        "ubisoft": ("ubisoftconnect:", "Ubisoft Connect"),
+        "ubisoft connect": ("ubisoftconnect:", "Ubisoft Connect"),
+        "ea": ("origin://", "EA App"),
+        "origin": ("origin://", "EA App"),
+        "ea app": ("origin://", "EA App"),
+        "xbox": ("xbox://", "Xbox App"),
+        "xbox app": ("xbox://", "Xbox App"),
+    }
+    key = (launcher or "").strip().lower()
+    if key not in launchers:
+        raise ToolError(f"Unknown game launcher: {launcher}. Known: {', '.join(launchers.keys())}")
+    protocol, name = launchers[key]
+    if os.name != "nt":
+        raise ToolError(f"{name} launching is currently supported on Windows only.")
+    try:
+        subprocess.Popen(["cmd", "/c", "start", protocol],
+                        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return f"Opened {name}."
+    except Exception as exc:
+        raise ToolError(f"Could not open {name}: {exc}")
+
+
+REGISTRY.append(Tool(
+    "launch_steam_game",
+    "Launch a specific Steam game by name (e.g., 'counter-strike', 'dota 2', 'skyrim'). "
+    "Use when the user wants to play a specific game on Steam.",
+    {"type": "object",
+     "properties": {"query": {"type": "string",
+                               "description": "Game name or partial name"}},
+     "required": ["query"]},
+    _launch_steam_game, SAFE))
+
+REGISTRY.append(Tool(
+    "launch_roblox",
+    "Launch Roblox Player. Use when the user wants to play Roblox.",
+    {"type": "object", "properties": {}},
+    _launch_roblox, SAFE))
+
+REGISTRY.append(Tool(
+    "launch_epic_game",
+    "Launch Epic Games Launcher. Use when the user wants to play a game on Epic Games.",
+    {"type": "object",
+     "properties": {"query": {"type": "string",
+                               "description": "Optional game name"}},
+     "required": []},
+    _launch_epic_game, SAFE))
+
+REGISTRY.append(Tool(
+    "launch_battlenet_game",
+    "Launch Battle.net. Use when the user wants to play a Blizzard game (WoW, Overwatch, Diablo, etc.).",
+    {"type": "object",
+     "properties": {"query": {"type": "string",
+                               "description": "Optional game name"}},
+     "required": []},
+    _launch_battlenet_game, SAFE))
+
+REGISTRY.append(Tool(
+    "launch_gog_game",
+    "Launch GOG Galaxy. Use when the user wants to play a game on GOG.",
+    {"type": "object",
+     "properties": {"query": {"type": "string",
+                               "description": "Optional game name"}},
+     "required": []},
+    _launch_gog_game, SAFE))
+
+REGISTRY.append(Tool(
+    "open_game_launcher",
+    "Open a game launcher/platform (Steam, Epic, Battle.net, GOG, Ubisoft, EA, Xbox). "
+    "Use when the user says 'open Steam', 'launch Epic', etc.",
+    {"type": "object",
+     "properties": {"launcher": {"type": "string",
+                                  "description": "Launcher name: steam, epic, battlenet, gog, ubisoft, ea, xbox"}},
+     "required": ["launcher"]},
+    _launch_game_launcher, SAFE))
+
+
+# --- UI Automation tools (require explicit user confirmation) ---
+# These provide low-level control over the mouse and keyboard.
+# All are CONFIRM tier - the user must approve each action.
+
+try:
+    import pyautogui
+    PYAUTOGUI_AVAILABLE = True
+except ImportError:
+    PYAUTOGUI_AVAILABLE = False
+    pyautogui = None
+
+def _ui_click_at(x: int, y: int, button: str = "left", clicks: int = 1) -> str:
+    """Click at specific screen coordinates. Requires confirmation."""
+    if not PYAUTOGUI_AVAILABLE:
+        raise ToolError("pyautogui is not installed. Cannot perform UI automation.")
+    if not (0 <= x <= pyautogui.size().width and 0 <= y <= pyautogui.size().height):
+        raise ToolError(f"Coordinates ({x}, {y}) are outside screen bounds.")
+    try:
+        pyautogui.click(x=x, y=y, button=button, clicks=clicks)
+        return f"Clicked at ({x}, {y}) with {button} button ({clicks}x)."
+    except Exception as exc:
+        raise ToolError(f"Click failed: {exc}")
+
+
+def _ui_type_text(text: str, interval: float = 0.05) -> str:
+    """Type text at current cursor position. Requires confirmation."""
+    if not PYAUTOGUI_AVAILABLE:
+        raise ToolError("pyautogui is not installed. Cannot perform UI automation.")
+    if not text:
+        raise ToolError("No text provided to type.")
+    try:
+        pyautogui.write(text, interval=interval)
+        return f"Typed {len(text)} characters."
+    except Exception as exc:
+        raise ToolError(f"Type failed: {exc}")
+
+
+def _ui_press_key(key: str, presses: int = 1, interval: float = 0.0) -> str:
+    """Press a key or key combination (e.g., 'ctrl+c', 'enter', 'f5'). Requires confirmation."""
+    if not PYAUTOGUI_AVAILABLE:
+        raise ToolError("pyautogui is not installed. Cannot perform UI automation.")
+    if not key:
+        raise ToolError("No key provided.")
+    try:
+        for _ in range(presses):
+            pyautogui.press(key)
+            if interval > 0:
+                import time
+                time.sleep(interval)
+        return f"Pressed '{key}' {presses}x."
+    except Exception as exc:
+        raise ToolError(f"Key press failed: {exc}")
+
+
+def _ui_hotkey(*keys: str) -> str:
+    """Press a hotkey combination (e.g., 'ctrl', 'alt', 'delete' -> ctrl+alt+del). Requires confirmation."""
+    if not PYAUTOGUI_AVAILABLE:
+        raise ToolError("pyautogui is not installed. Cannot perform UI automation.")
+    if not keys:
+        raise ToolError("No keys provided for hotkey.")
+    try:
+        pyautogui.hotkey(*keys)
+        return f"Pressed hotkey: {'+'.join(keys)}."
+    except Exception as exc:
+        raise ToolError(f"Hotkey failed: {exc}")
+
+
+def _ui_move_mouse(x: int, y: int, duration: float = 0.25) -> str:
+    """Move mouse to specific screen coordinates. Requires confirmation."""
+    if not PYAUTOGUI_AVAILABLE:
+        raise ToolError("pyautogui is not installed. Cannot perform UI automation.")
+    if not (0 <= x <= pyautogui.size().width and 0 <= y <= pyautogui.size().height):
+        raise ToolError(f"Coordinates ({x}, {y}) are outside screen bounds.")
+    try:
+        pyautogui.moveTo(x, y, duration=duration)
+        return f"Moved mouse to ({x}, {y})."
+    except Exception as exc:
+        raise ToolError(f"Mouse move failed: {exc}")
+
+
+def _ui_drag_to(x: int, y: int, duration: float = 0.5, button: str = "left") -> str:
+    """Drag from current position to target coordinates. Requires confirmation."""
+    if not PYAUTOGUI_AVAILABLE:
+        raise ToolError("pyautogui is not installed. Cannot perform UI automation.")
+    if not (0 <= x <= pyautogui.size().width and 0 <= y <= pyautogui.size().height):
+        raise ToolError(f"Coordinates ({x}, {y}) are outside screen bounds.")
+    try:
+        pyautogui.dragTo(x, y, duration=duration, button=button)
+        return f"Dragged to ({x}, {y}) with {button} button."
+    except Exception as exc:
+        raise ToolError(f"Drag failed: {exc}")
+
+
+REGISTRY.append(Tool(
+    "ui_click_at",
+    "Click at specific screen coordinates. Use for precise UI automation. "
+    "Requires user confirmation. Coordinates are in screen pixels (0,0 = top-left).",
+    {"type": "object",
+     "properties": {"x": {"type": "integer", "description": "X coordinate"},
+                    "y": {"type": "integer", "description": "Y coordinate"},
+                    "button": {"type": "string", "enum": ["left", "right", "middle"], "default": "left"},
+                    "clicks": {"type": "integer", "default": 1, "description": "Number of clicks"}},
+     "required": ["x", "y"]},
+    _ui_click_at, CONFIRM))
+
+REGISTRY.append(Tool(
+    "ui_type_text",
+    "Type text at the current cursor position. Use for filling forms, typing in editors, etc. "
+    "Requires user confirmation.",
+    {"type": "object",
+     "properties": {"text": {"type": "string", "description": "Text to type"},
+                    "interval": {"type": "number", "default": 0.05, "description": "Delay between keystrokes (seconds)"}},
+     "required": ["text"]},
+    _ui_type_text, CONFIRM))
+
+REGISTRY.append(Tool(
+    "ui_press_key",
+    "Press a single key or key combination (e.g., 'enter', 'f5', 'tab'). "
+    "Requires user confirmation.",
+    {"type": "object",
+     "properties": {"key": {"type": "string", "description": "Key to press (e.g., 'enter', 'f5', 'tab', 'esc')"},
+                    "presses": {"type": "integer", "default": 1, "description": "Number of presses"},
+                    "interval": {"type": "number", "default": 0.0, "description": "Delay between presses (seconds)"}},
+     "required": ["key"]},
+    _ui_press_key, CONFIRM))
+
+REGISTRY.append(Tool(
+    "ui_hotkey",
+    "Press a hotkey combination (e.g., ctrl+alt+del, ctrl+c, alt+tab). "
+    "Each argument is one key. Requires user confirmation.",
+    {"type": "object",
+     "properties": {"keys": {"type": "array", "items": {"type": "string"},
+                              "description": "Keys to press simultaneously (e.g., ['ctrl', 'c'])",
+                              "minItems": 1}},
+     "required": ["keys"]},
+    _ui_hotkey, CONFIRM))
+
+REGISTRY.append(Tool(
+    "ui_move_mouse",
+    "Move the mouse cursor to specific screen coordinates. "
+    "Requires user confirmation.",
+    {"type": "object",
+     "properties": {"x": {"type": "integer", "description": "X coordinate"},
+                    "y": {"type": "integer", "description": "Y coordinate"},
+                    "duration": {"type": "number", "default": 0.25, "description": "Move duration (seconds)"}},
+     "required": ["x", "y"]},
+    _ui_move_mouse, CONFIRM))
+
+REGISTRY.append(Tool(
+    "ui_drag_to",
+    "Drag from current mouse position to target coordinates. "
+    "Requires user confirmation.",
+    {"type": "object",
+     "properties": {"x": {"type": "integer", "description": "Target X coordinate"},
+                    "y": {"type": "integer", "description": "Target Y coordinate"},
+                    "duration": {"type": "number", "default": 0.5, "description": "Drag duration (seconds)"},
+                    "button": {"type": "string", "enum": ["left", "right", "middle"], "default": "left"}},
+     "required": ["x", "y"]},
+    _ui_drag_to, CONFIRM))
+
 BY_NAME = {t.name: t for t in REGISTRY}
 _TRIGGERS = _TRIGGERS + (
     "remind", "reminder", "in an hour", "in a minute", "later",
     "watch my", "watch the", "tell me when", "let me know when",
     "scheduled", "cancel",
+    "steam", "roblox", "epic", "battle.net", "battlenet", "gog", "gog galaxy",
+    "ubisoft", "ea", "origin", "xbox", "game launcher",
+    "juega", "jugar", "lanza", "abre.*juego", "play game", "launch game",
+    "click", "clic", "type", "escribe", "press", "presiona", "tecla",
+    "hotkey", "atajo", "move mouse", "mueve ratón", "drag", "arrastrar",
+    "automatiza", "ui click", "ui type", "ui press", "ui hotkey",
 )
 
 def _web_tools_allowed() -> bool:
@@ -1347,6 +2281,3 @@ def _web_tools_allowed() -> bool:
 
 
 WEB_TOOL_NAMES = frozenset({"open_url", "open_youtube", "web_search", "web_fetch"})
-
-
-
