@@ -2468,12 +2468,12 @@ Hey Ciel</textarea>
   // Named so the startup zoom (see STARTUP_ZOOM_MS below) can ease FROM
   // an inflated multiple of this back down TO it every frame, rather
   // than the scale just being a fixed one-time value.
-  const WORLD_GROUP_BASE_SCALE = 0.78;
+  const WORLD_GROUP_BASE_SCALE = 0.90;
   worldGroup.scale.setScalar(WORLD_GROUP_BASE_SCALE);
   // Shrinks the core and wireframe (not the cube rings around them),
   // independently, so there's headroom before the listening pulse
   // crowds the outer PTT cube ring - see their use in animate().
-  const CORE_SHRINK = 0.7;
+  const CORE_SHRINK = 0.82;
   const WIREFRAME_SHRINK = 0.85;
   // The octagon speaking ring sits 20% tighter to the core than it did.
   const OCTAGON_SHRINK = 0.8;
@@ -4644,11 +4644,11 @@ Hey Ciel</textarea>
       const targetX = Number(xPx) - desktopDragGrabOffsetX;
       const targetY = Number(yPx) - desktopDragGrabOffsetY;
       desktopTarget.x = Math.max(
-        0.08,
+        0.02,
         Math.min(0.98, targetX / Math.max(1, window.innerWidth))
       );
       desktopTarget.y = Math.max(
-        0.10,
+        0.04,
         Math.min(0.96, targetY / Math.max(1, window.innerHeight))
       );
     }
