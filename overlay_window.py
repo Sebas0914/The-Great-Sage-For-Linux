@@ -265,10 +265,25 @@ class OverlayView(QWebEngineView):
         # any visible controls, so the transparent area does not swallow the
         # desktop underneath.
         #
-        # Keep the requested 340px square as the initial fallback geometry.
-        # LayerShell replaces it with the monitor geometry once configured.
-        self.resize(size, size)
-        effective_size = size
+        # Give Qt the monitor geometry BEFORE creating the LayerShell
+        # surface. Anchors alone are not enough for QWebEngine: the Chromium
+        # viewport can remain at the constructor size (340x340), which clips
+        # Raphael and also makes JavaScript report the wrong screen size.
+        # LayerShell still owns the final compositor geometry.
+        if WAYLAND_SESSION:
+            screen = QGuiApplication.primaryScreen()
+            if screen is not None:
+                self.setGeometry(screen.geometry())
+                effective_size = max(
+                    int(screen.geometry().width()),
+                    int(screen.geometry().height()),
+                )
+            else:
+                self.resize(size, size)
+                effective_size = size
+        else:
+            self.resize(size, size)
+            effective_size = size
 
         self._filtered = None
         self._wayland_layer = False
@@ -291,7 +306,7 @@ class OverlayView(QWebEngineView):
         self._hit_all = False
         # Linux/Wayland: keep only Raphael's circular visual area interactive.
         # En pantalla completa el radio debe basarse en el tamaño real.
-        self._mask_radius = max(1, int(effective_size * 0.30))
+        self._mask_radius = max(1, int(min(effective_size, 640) * 0.30))
         self._placed = False
         self._click_through = None
         self._ct_timer = QTimer(self)
