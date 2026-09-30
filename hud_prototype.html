@@ -5484,7 +5484,7 @@ const MINI_CHAT_PAD = 3;
   const noticeSound = new Audio('voice_lines/koku.ogg');
   const voiceLineAudio = new Audio();
   noticeSound.volume = 0.8;
-  voiceLineAudio.volume = 0.8;
+  voiceLineAudio.volume = 1.0;
   // Bar caption closes as soon as the real audio actually finishes,
   // rather than only ever on its own fixed 2.5s timer (see
   // scheduleBarCaptionAutoHide) - that timer stays as a fallback for
@@ -5986,12 +5986,21 @@ const MINI_CHAT_PAD = 3;
     }
 
     const box = document.getElementById('caption-box');
-    if (!box || !box.classList.contains('show') || !desktopSubtitleShown) {
+    const el = document.getElementById('caption-text');
+    const visibleText = el ? (el.textContent || '') : '';
+    if (!box || !box.classList.contains('show') || (!desktopSubtitleShown && !visibleText)) {
       desktopSubtitleShown = '';
       desktopSubtitleQueue = '';
       desktopSubtitleSource = '';
       if (box) box.classList.remove('show');
       return;
+    }
+
+    // Synchronize the bookkeeping with the actual DOM. This also covers the
+    // no-audio fallback, where the subtitle can be shown directly without
+    // the audio-start typewriter path.
+    if (!desktopSubtitleShown && visibleText) {
+      desktopSubtitleShown = visibleText;
     }
 
     // Give the viewer a short reading window after Raphael stops speaking.
@@ -10067,7 +10076,7 @@ const MINI_CHAT_PAD = 3;
     captionMoveBtn,
   ].forEach(addPressFeedback);
 
-  let masterVolume = 0.8;
+  let masterVolume = 1.0;
   const volumeSlider = document.getElementById('volume-slider');
   volumeSlider.addEventListener('input', () => {
     masterVolume = Number(volumeSlider.value) / 100;
