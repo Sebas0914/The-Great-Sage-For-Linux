@@ -329,3 +329,7 @@ class LinuxX11Platform:
     @property
     def paths(self):
         return LinuxX11DataPaths()
+
+    @property
+    def capabilities(self):
+        return detect_capabilities()
