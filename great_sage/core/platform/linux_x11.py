@@ -94,12 +94,8 @@ class LinuxX11WindowInfo(WindowInfo):
             return None
 
 
-class LinuxX11DataPaths(DataPaths):
-    def data_dir(self) -> str:
-        override = os.environ.get("GREAT_SAGE_DATA_DIR")
-        if override:
-            return os.path.abspath(os.path.expanduser(override))
-        return user_data_dir("GreatSage", "GreatSage")
+class LinuxX11DataPaths(LinuxDataPaths):
+    pass
 
 
 class X11Hotkey(Hotkey):
