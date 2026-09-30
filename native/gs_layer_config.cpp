@@ -85,7 +85,7 @@ extern "C" int gs_configure_panel_layer(void *window_ptr, int width, int height)
     anchors |= LayerShellQt::Window::AnchorRight;
     layer->setAnchors(anchors);
     layer->setMargins(QMargins(0, 0, 0, 0));
-    layer->setDesiredSize(QSize(width, height));
+    layer->setDesiredSize(QSize(0, 0));
     layer->setExclusiveZone(-1);
     layer->setLayer(LayerShellQt::Window::LayerOverlay);
     layer->setKeyboardInteractivity(
