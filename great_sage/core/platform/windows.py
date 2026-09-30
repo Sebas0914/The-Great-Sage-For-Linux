@@ -102,3 +102,7 @@ class WindowsPlatform:
     @property
     def paths(self):
         return WindowsDataPaths()
+
+    @property
+    def capabilities(self):
+        return detect_capabilities()
