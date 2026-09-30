@@ -2382,6 +2382,45 @@ Hey Ciel</textarea>
         Play recorded sound clips for trigger phrases (off = always live TTS)
       </label>
       <div id="voice-lines-list" style="opacity:0.6;">(waiting for AI connection...)</div>
+
+      <h4>PERSONALIDAD Y MEMORIA</h4>
+            <div style="opacity:0.65; font-size:11px; margin-bottom:10px;">
+              Responde estas preguntas para que Gran Sabio te conozca mejor y adapte
+              su forma de hablar, intereses y tono. Las respuestas se guardan
+              localmente en tu carpeta de datos (no en GitHub).
+            </div>
+            <label>
+              <input type="checkbox" id="persona-use-name-toggle">
+              Usar mi nombre al hablarme
+            </label>
+            <div class="persona-question">
+              <label class="slider-label">Tu nombre / apodo</label>
+              <input type="text" id="persona-name-input" placeholder="Ej: Sebas, Maestro, Capitán...">
+            </div>
+            <div class="persona-question">
+              <label class="slider-label">Intereses y aficiones (separados por comas)</label>
+              <textarea id="persona-interests-input" rows="2" placeholder="Ej: programación, videojuegos, anime, lectura, música..."></textarea>
+            </div>
+            <div class="persona-question">
+              <label class="slider-label">Personalidad (palabras clave)</label>
+              <textarea id="persona-traits-input" rows="2" placeholder="Ej: curioso, analítico, sarcástico, paciente, creativo..."></textarea>
+            </div>
+            <div class="persona-question">
+              <label class="slider-label">Tono preferido de Gran Sabio</label>
+              <select id="persona-tone-select">
+                <option value="casual">Casual y relajado</option>
+                <option value="formal">Formal y preciso</option>
+                <option value="amigable">Amigable y cercano</option>
+                <option value="tecnico">Técnico y directo</option>
+              </select>
+            </div>
+            <div class="persona-question">
+              <label class="slider-label">Qué NO te gusta / evitar temas</label>
+              <textarea id="persona-dislikes-input" rows="2" placeholder="Ej: explicaciones muy largas, jerga innecesaria, formalidad excesiva..."></textarea>
+            </div>
+            <button id="persona-save-btn" class="settings-btn" type="button">GUARDAR PERFIL</button>
+            <div id="persona-save-status" style="opacity:0.6; font-size:11px; margin-top:4px;"></div>
+      
     </section>
     </div>
     </div>
