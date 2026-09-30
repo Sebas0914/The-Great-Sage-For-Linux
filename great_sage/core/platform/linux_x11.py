@@ -15,6 +15,8 @@ from typing import Optional
 from platformdirs import user_data_dir
 
 from .base import AppLauncher, DataPaths, Hotkey, WindowInfo
+from .capabilities import detect_capabilities
+from .common import LinuxLauncher, LinuxDataPaths
 
 
 class LinuxX11Launcher(AppLauncher):
