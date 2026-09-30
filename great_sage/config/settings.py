@@ -705,7 +705,7 @@ F5_RVC_LOCK_JAPANESE_REFERENCE = (
 # ~0.8s sooner - but a listening A/B rejected 4 outright as clearly
 # degraded. 8 is the floor for acceptable quality on this voice, not
 # merely a default nobody revisited.
-F5_NFE_STEP = 16
+F5_NFE_STEP = 8
 
 # Synthesize the whole reply as ONE clip, rather than streaming it out in
 # sentence-sized chunks as the model writes.
@@ -725,7 +725,7 @@ F5_NFE_STEP = 16
 # and stumbles.
 #
 # Set False to go back to streaming chunks.
-VOICE_SINGLE_SHOT = False
+VOICE_SINGLE_SHOT = True
 
 # Language XTTS actually speaks in. SYSTEM_PROMPT's on-screen chat text is
 # English; CLONE_TRANSLATE below is what bridges the two by translating
