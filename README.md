@@ -4,7 +4,7 @@ A Linux-first desktop AI companion with a 3D HUD, local voice pipeline, explicit
 
 ## Current platform support
 
-- **Linux / KDE Plasma / Wayland:** platform adapter, XDG GlobalShortcuts hotkey integration, KWin active-window bridge, application/path/URL launching, KDE Spectacle screen capture, and a fullscreen LayerShellQt HUD with native Wayland input regions.
+- **Linux / Wayland + X11:** platform adapters selected automatically from the current display server. KDE/KWin integration is optional; generic Linux uses XDG GlobalShortcuts where available, X11 grabs on X11, `grim` or Spectacle for Wayland screenshots, and the existing LayerShellQt HUD when available.
 - **Linux / X11:** platform adapter, configurable X11 global shortcut, active-window detection, and the same safe launcher interface.
 - **Windows:** the existing Windows platform implementation remains available; Linux work is isolated behind the platform abstraction.
 
@@ -112,9 +112,9 @@ CI runs these checks on the Linux development branch and pull requests.
 
 ## Known limitations
 
-- A real KDE Wayland session is required to validate the desktop integrations end-to-end; CI validates their contracts but cannot reproduce the user's desktop session.
+- KDE is not a runtime requirement. KDE/KWin adds focused-window metadata; other desktops fall back cleanly when a compositor-specific capability is unavailable. A real desktop session is still required to validate the corresponding desktop integration end-to-end.
 - Linux Wayland uses LayerShellQt for the transparent fullscreen HUD. Raphael and the caption box are the only interactive regions; the rest of the surface is click-through.
-- Screen capture depends on KDE Spectacle being available.
+- Wayland screen capture uses `grim` when available, with KDE Spectacle accepted as an alternative. X11 capture remains platform/tool dependent.
 - NVIDIA-hosted AI requires an API key and network access.
 - F5-TTS, faster-whisper, and the optional Raphael RVC stage have substantial model/runtime dependencies.
 - Raphael RVC model assets are third-party and must be installed separately; they are not downloaded by Great Sage. The RVC Python runtime is also isolated in `.rvc-venv` because its published dependency pins are not compatible with the main Python 3.14 environment.
@@ -123,3 +123,32 @@ CI runs these checks on the Linux development branch and pull requests.
 ## License and assets
 
 Check the repository's license and asset-specific documentation before redistributing voice recordings or other third-party media. Pre-recorded character voice lines are not treated as original project code.
+
+### Platform diagnostics
+
+Before reporting a desktop-specific issue, run:
+
+```bash
+python -m great_sage.core.platform.diagnostics
+```
+
+This reports the detected OS, display server, desktop environment, and the capabilities Great Sage can use in the current session.
+
+
+## Linux native Wayland bridge
+
+The repository contains the complete source and generated native bridge used
+by the Wayland overlay:
+
+- `native/gs_layer_config.cpp` — LayerShellQt integration source.
+- `native/libgs_layer_config.so` — generated bridge loaded by the overlay.
+- `native/build_layershell.sh` — reproducible local build command.
+
+System dependencies such as Qt6, LayerShellQt development headers/libraries,
+the C++ compiler, Python, and virtual environments are intentionally kept
+outside the repository. They are installed separately on the target machine.
+
+GitHub Actions also rebuilds `native/libgs_layer_config.so` whenever the
+native source/build script changes, so the tracked binary stays synchronized
+with the source.
+

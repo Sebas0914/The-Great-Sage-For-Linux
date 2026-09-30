@@ -10,6 +10,7 @@ from typing import Optional
 from platformdirs import user_data_dir
 
 from .base import AppLauncher, DataPaths, Hotkey, WindowInfo
+from .capabilities import detect_capabilities
 
 
 class WindowsLauncher(AppLauncher):
@@ -101,3 +102,7 @@ class WindowsPlatform:
     @property
     def paths(self):
         return WindowsDataPaths()
+
+    @property
+    def capabilities(self):
+        return detect_capabilities()

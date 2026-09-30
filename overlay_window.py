@@ -86,7 +86,13 @@ OPEN_PANEL_PREFIX = "GS_OPEN_PANEL:"
 
 # Panel windows are ordinary opaque windows - they show forms and lists,
 # not a floating visual, so transparency would only hurt readability.
-PANEL_SIZE = (560, 640)
+# Chat/settings/history panels should use the available desktop instead of
+# being locked to a tiny 560x640 box. The actual size is calculated from the
+# current monitor in PanelView.showEvent(), so HiDPI and different resolutions
+# remain usable without hard-coding 1920x1080.
+PANEL_SIZE = (960, 800)
+PANEL_SCREEN_FRACTION = 1.0
+PANEL_MAX_SIZE = (100000, 100000)
 
 # Tight to the corner. The overlay is meant to tuck out of the way, and
 # 24px read as floating loose beside the edge.
@@ -136,6 +142,13 @@ WAYLAND_SESSION = (
     and os.environ.get("XDG_SESSION_TYPE", "").lower() == "wayland"
 )
 
+# LayerShellQt requires the shell integration to be selected BEFORE Qt creates
+# any Wayland platform surface. Without this, Window::get() can fall back to
+# an ordinary xdg_toplevel; setLayer/anchors then have no compositor effect.
+# This was the reason the panel kept behaving like a small normal window.
+if WAYLAND_SESSION:
+    os.environ.setdefault("QT_WAYLAND_SHELL_INTEGRATION", "layer-shell")
+
 _WL_LAYER = None
 _WL_INPUT = None
 
@@ -168,6 +181,12 @@ def _load_wayland_native():
                 ctypes.c_void_p, ctypes.c_int, ctypes.c_int
             ]
             _WL_LAYER.gs_position_layer.restype = ctypes.c_int
+            _WL_LAYER.gs_configure_panel_layer.argtypes = [
+                ctypes.c_void_p,
+                ctypes.c_int,
+                ctypes.c_int,
+            ]
+            _WL_LAYER.gs_configure_panel_layer.restype = ctypes.c_int
 
         if os.path.isfile(input_path):
             _WL_INPUT = ctypes.CDLL(input_path)
@@ -240,13 +259,31 @@ class OverlayView(QWebEngineView):
         self.setAttribute(Qt.WA_NoSystemBackground, True)
         self.setAttribute(Qt.WA_OpaquePaintEvent, False)
 
-        # En Wayland la superficie LayerShell debe ser SOLO del tamaño del
-        # overlay. Una superficie fullscreen puede hacer que QWebEngine/Chromium
-        # pinte el fondo transparente como negro y bloquee todo el escritorio.
-        # El compositor mantiene esta superficie por encima de las ventanas
-        # normales; Raphael sigue siendo el contenido de este cuadrado.
-        self.resize(size, size)
-        effective_size = size
+        # Wayland uses one fullscreen LayerShell surface for desktop Raphael.
+        # The visual itself stays compact; hud_prototype.html scales and moves
+        # it inside this surface. Input regions are restricted to Raphael and
+        # any visible controls, so the transparent area does not swallow the
+        # desktop underneath.
+        #
+        # Give Qt the monitor geometry BEFORE creating the LayerShell
+        # surface. Anchors alone are not enough for QWebEngine: the Chromium
+        # viewport can remain at the constructor size (340x340), which clips
+        # Raphael and also makes JavaScript report the wrong screen size.
+        # LayerShell still owns the final compositor geometry.
+        if WAYLAND_SESSION:
+            screen = QGuiApplication.primaryScreen()
+            if screen is not None:
+                self.setGeometry(screen.geometry())
+                effective_size = max(
+                    int(screen.geometry().width()),
+                    int(screen.geometry().height()),
+                )
+            else:
+                self.resize(size, size)
+                effective_size = size
+        else:
+            self.resize(size, size)
+            effective_size = size
 
         self._filtered = None
         self._wayland_layer = False
@@ -255,6 +292,7 @@ class OverlayView(QWebEngineView):
         self._wayland_input = None
         self._wayland_interactive_rects = []
         self._input_mask_generation = 0
+        # Qt's native Wayland input mask is the primary click-through mechanism.
         self._drag_press_pos = None
         self._dragging = False
         self._drag_offset = None
@@ -269,7 +307,7 @@ class OverlayView(QWebEngineView):
         self._hit_all = False
         # Linux/Wayland: keep only Raphael's circular visual area interactive.
         # En pantalla completa el radio debe basarse en el tamaño real.
-        self._mask_radius = max(1, int(effective_size * 0.30))
+        self._mask_radius = max(1, int(min(effective_size, 640) * 0.30))
         self._placed = False
         self._click_through = None
         self._ct_timer = QTimer(self)
@@ -361,6 +399,10 @@ class OverlayView(QWebEngineView):
         height = max(1, min(int(height), h - y))
 
         self._wayland_interactive_rects = [(x, y, width, height)]
+        try:
+            self.setMask(QRegion(int(x), int(y), int(width), int(height)))
+        except Exception as exc:
+            print(f"[overlay] Wayland QWindow mask failed: {exc}", flush=True)
 
         try:
             result = self._wayland_input.gs_set_input_region(
@@ -411,6 +453,16 @@ class OverlayView(QWebEngineView):
                 continue
 
         self._wayland_interactive_rects = clean_rects
+        # QWindow.setMask() is Qt's Wayland-native input-region path.
+        # Keep it authoritative; the optional wl_surface bridge can be
+        # overwritten by a later Qt surface commit.
+        try:
+            region = QRegion()
+            for rx, ry, rw, rh in clean_rects:
+                region = region.united(QRegion(int(rx), int(ry), int(rw), int(rh)))
+            self.setMask(region)
+        except Exception as exc:
+            print(f"[overlay] Wayland QWindow mask failed: {exc}", flush=True)
         print(
             f"[overlay] INPUT REGION rects={clean_rects} "
             f"surface={w}x{h}",
@@ -972,10 +1024,11 @@ class OverlayView(QWebEngineView):
                     pos = event.position().toPoint()
 
                     if self._point_inside_wayland_rect(pos):
-                        # The second interactive rectangle is the caption.
-                        # Its mouse events belong to the web page so the
-                        # caption's own MOVE CAPTION gesture can run. Only
-                        # presses on Raphael are promoted to host-side drag.
+                        # Once Raphael is grabbed, make the ENTIRE fullscreen
+                        # layer interactive immediately. Previously we waited
+                        # for 6px of movement before expanding the input region;
+                        # on Wayland that let the pointer leave the small core
+                        # region and permanently lose horizontal drag events.
                         rects = self._wayland_interactive_rects
                         if (
                             len(rects) > 1
@@ -988,16 +1041,21 @@ class OverlayView(QWebEngineView):
                         self._drag_window_offset = (
                             self._drag_press_pos - self.frameGeometry().topLeft()
                         )
-                        self._dragging = False
+                        self._dragging = True
+                        self._apply_wayland_input_region(
+                            0, 0, self.width(), self.height()
+                        )
                         try:
                             self.page().runJavaScript(
                                 "window.__desktopBeginDrag "
                                 "&& window.__desktopBeginDrag(%s,%s);"
+                                " window.__desktopSetHostDragging "
+                                "&& window.__desktopSetHostDragging(true);"
                                 % (pos.x(), pos.y())
                             )
                         except Exception:
                             pass
-                        return False
+                        return True
 
             elif et == QEvent.MouseMove:
                 if (
@@ -1008,25 +1066,6 @@ class OverlayView(QWebEngineView):
 
                     dx = current.x() - self._drag_press_pos.x()
                     dy = current.y() - self._drag_press_pos.y()
-
-                    if not self._dragging and (dx * dx + dy * dy) >= 36:
-                        self._dragging = True
-                        self._input_mask_generation += 1
-
-                        # Temporarily make the whole fullscreen surface
-                        # interactive so the pointer cannot leave the
-                        # original Raphael region while dragging.
-                        self._apply_wayland_input_region(
-                            0, 0, self.width(), self.height()
-                        )
-
-                        try:
-                            self.page().runJavaScript(
-                                "window.__desktopSetHostDragging "
-                                "&& window.__desktopSetHostDragging(true);"
-                            )
-                        except Exception:
-                            pass
 
                     if self._dragging:
                         speed = (dx * dx + dy * dy) ** 0.5
@@ -1216,9 +1255,20 @@ class PanelView(QWebEngineView):
 
     def __init__(self, section: str):
         super().__init__()
-        self.setWindowFlags(Qt.FramelessWindowHint)
+        self.setWindowFlags(
+            Qt.FramelessWindowHint
+            | Qt.WindowStaysOnTopHint
+            | Qt.Tool
+        )
         self.resize(*PANEL_SIZE)
+        if WAYLAND_SESSION:
+            screen = QGuiApplication.primaryScreen()
+            if screen is not None:
+                self.setGeometry(screen.geometry())
         self.setWindowTitle(f"Great Sage - {section}")
+        self._wayland_layer = False
+        self._wayland_layer_lib = None
+        self._wayland_window_ptr = None
         self._drag_from = None
         self._filtered = None
         # Same reasoning as the overlay: QWebEngineView never receives
@@ -1229,12 +1279,17 @@ class PanelView(QWebEngineView):
         self.loadFinished.connect(lambda _ok: self._install_mouse_filter())
 
     def showEvent(self, event):
-        # The render widget may not exist yet when the page finishes
-        # loading, and installing on a proxy that is not there yet is a
-        # silent no-op - which leaves the title bar dead with nothing to
-        # show why. The overlay installs twice for the same reason.
+        # LayerShellQt must be configured before the Wayland surface is
+        # mapped. The actual configure call is now performed in main(),
+        # immediately before show(). Doing it here is too late: Qt has
+        # already committed the normal toplevel surface, so KDE can keep
+        # treating the panel as a small ordinary window behind other apps.
         super().showEvent(event)
         self._install_mouse_filter()
+        if not WAYLAND_SESSION:
+            self.showFullScreen()
+            self.raise_()
+            self.activateWindow()
         QTimer.singleShot(0, self._install_mouse_filter)
 
     def _install_mouse_filter(self):
@@ -1242,6 +1297,45 @@ class PanelView(QWebEngineView):
         if proxy is not None and proxy is not self._filtered:
             proxy.installEventFilter(self)
             self._filtered = proxy
+
+    def _configure_panel_wayland_layer(self, width, height):
+        """Put the full-screen panel on Wayland's compositor-managed overlay layer."""
+        if not WAYLAND_SESSION:
+            return False
+        layer, _input_region = _load_wayland_native()
+        if layer is None:
+            print(
+                "[panel] LayerShellQt bridge unavailable; using Qt topmost fallback",
+                flush=True,
+            )
+            self.raise_()
+            return False
+        ptr = _qwindow_cpp_pointer(self)
+        if ptr is None:
+            return False
+        try:
+            qwindow = self.windowHandle()
+            screen = QGuiApplication.primaryScreen()
+            if qwindow is not None and screen is not None:
+                qwindow.setScreen(screen)
+            result = int(layer.gs_configure_panel_layer(ptr, int(self.width()), int(self.height())))
+            if result != 0:
+                print(
+                    f"[panel] gs_configure_layer returned {result}",
+                    flush=True,
+                )
+                return False
+            self._wayland_layer = True
+            self._wayland_layer_lib = layer
+            self._wayland_window_ptr = ptr
+            print(
+                f"[panel] Wayland overlay layer enabled: {width}x{height}",
+                flush=True,
+            )
+            return True
+        except Exception as exc:
+            print(f"[panel] Wayland layer configuration failed: {exc}", flush=True)
+            return False
 
     def _in_bar(self, pos) -> bool:
         return (pos.y() <= PANEL_BAR_H
@@ -1401,6 +1495,20 @@ def main() -> int:
                 panel.showMinimized()
 
         panel.titleChanged.connect(_on_panel_title)
+
+        # Determine the final panel geometry and configure LayerShellQt
+        # BEFORE mapping the Wayland surface. This is the critical ordering:
+        # once show() commits the surface as a normal xdg_toplevel, changing
+        # it afterwards cannot reliably turn it into a layer-shell overlay.
+        screen = QGuiApplication.primaryScreen()
+        if screen is not None:
+            area = screen.geometry()
+            panel.setGeometry(area)
+            if WAYLAND_SESSION:
+                panel._configure_panel_wayland_layer(
+                    int(area.width()), int(area.height())
+                )
+
         url = args.url or QUrl.fromLocalFile(
             os.path.join(HERE, "hud_prototype.html")).toString()
         panel.load(QUrl(f"{url}?panel={args.panel}"))
@@ -1461,7 +1569,7 @@ def main() -> int:
     # leaving an invisible process running with no window.
     def _failsafe():
         if not view.isVisible():
-            # LayerShell ya determina la geometría en Wayland.
+            # LayerShell determines the fullscreen geometry on Wayland.
             if not WAYLAND_SESSION:
                 place_top_right(view, args.size)
             view.show()

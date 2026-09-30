@@ -15,12 +15,11 @@ from typing import Optional
 from platformdirs import user_data_dir
 
 from .base import AppLauncher, DataPaths, Hotkey, WindowInfo
+from .capabilities import detect_capabilities
+from .common import LinuxLauncher, LinuxDataPaths
 
 
-class LinuxX11Launcher(AppLauncher):
-    def open_application(self, name: str) -> str:
-        from .linux_wayland import LinuxWaylandLauncher
-        return LinuxWaylandLauncher().open_application(name)
+class LinuxX11Launcher(LinuxLauncher):
 
     def open_path(self, path: str) -> str:
         target = Path(os.path.expandvars(os.path.expanduser((path or "").strip())))
@@ -95,12 +94,8 @@ class LinuxX11WindowInfo(WindowInfo):
             return None
 
 
-class LinuxX11DataPaths(DataPaths):
-    def data_dir(self) -> str:
-        override = os.environ.get("GREAT_SAGE_DATA_DIR")
-        if override:
-            return os.path.abspath(os.path.expanduser(override))
-        return user_data_dir("GreatSage", "GreatSage")
+class LinuxX11DataPaths(LinuxDataPaths):
+    pass
 
 
 class X11Hotkey(Hotkey):
@@ -334,3 +329,7 @@ class LinuxX11Platform:
     @property
     def paths(self):
         return LinuxX11DataPaths()
+
+    @property
+    def capabilities(self):
+        return detect_capabilities()

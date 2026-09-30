@@ -1973,6 +1973,11 @@ body.mini.pet-state-confused #canvas-wrap { animation: gs-pet-confused 720ms eas
             </div>
 
             <div class="ai-set-group">
+              <label>NVIDIA API key</label>
+              <input id="ai-key-nvidia" type="password" autocomplete="off"
+                     placeholder="not set">
+            </div>
+            <div class="ai-set-group">
               <label>Anthropic API key</label>
               <input id="ai-key-anthropic" type="password" autocomplete="off"
                      placeholder="not set">
@@ -2048,11 +2053,11 @@ body.mini.pet-state-confused #canvas-wrap { animation: gs-pet-confused 720ms eas
           <summary>Colour</summary>
           <div class="color-swatch-row">
             <div class="color-swatch-item">
-              <input type="color" id="bg-base-color-picker" class="color-swatch-btn" value="#175c99">
+              <input type="color" id="bg-base-color-picker" class="color-swatch-btn" value="#2fa7f0">
               <span>Background</span>
             </div>
             <div class="color-swatch-item">
-              <input type="color" id="bg-accent-color-picker" class="color-swatch-btn" value="#806b2e">
+              <input type="color" id="bg-accent-color-picker" class="color-swatch-btn" value="#c99f35">
               <span>Accent</span>
             </div>
             <div class="color-swatch-item">
@@ -2377,6 +2382,45 @@ Hey Ciel</textarea>
         Play recorded sound clips for trigger phrases (off = always live TTS)
       </label>
       <div id="voice-lines-list" style="opacity:0.6;">(waiting for AI connection...)</div>
+
+      <h4>PERSONALIDAD Y MEMORIA</h4>
+            <div style="opacity:0.65; font-size:11px; margin-bottom:10px;">
+              Responde estas preguntas para que Gran Sabio te conozca mejor y adapte
+              su forma de hablar, intereses y tono. Las respuestas se guardan
+              localmente en tu carpeta de datos (no en GitHub).
+            </div>
+            <label>
+              <input type="checkbox" id="persona-use-name-toggle">
+              Usar mi nombre al hablarme
+            </label>
+            <div class="persona-question">
+              <label class="slider-label">Tu nombre / apodo</label>
+              <input type="text" id="persona-name-input" placeholder="Ej: Sebas, Maestro, Capitán...">
+            </div>
+            <div class="persona-question">
+              <label class="slider-label">Intereses y aficiones (separados por comas)</label>
+              <textarea id="persona-interests-input" rows="2" placeholder="Ej: programación, videojuegos, anime, lectura, música..."></textarea>
+            </div>
+            <div class="persona-question">
+              <label class="slider-label">Personalidad (palabras clave)</label>
+              <textarea id="persona-traits-input" rows="2" placeholder="Ej: curioso, analítico, sarcástico, paciente, creativo..."></textarea>
+            </div>
+            <div class="persona-question">
+              <label class="slider-label">Tono preferido de Gran Sabio</label>
+              <select id="persona-tone-select">
+                <option value="casual">Casual y relajado</option>
+                <option value="formal">Formal y preciso</option>
+                <option value="amigable">Amigable y cercano</option>
+                <option value="tecnico">Técnico y directo</option>
+              </select>
+            </div>
+            <div class="persona-question">
+              <label class="slider-label">Qué NO te gusta / evitar temas</label>
+              <textarea id="persona-dislikes-input" rows="2" placeholder="Ej: explicaciones muy largas, jerga innecesaria, formalidad excesiva..."></textarea>
+            </div>
+            <button id="persona-save-btn" class="settings-btn" type="button">GUARDAR PERFIL</button>
+            <div id="persona-save-status" style="opacity:0.6; font-size:11px; margin-top:4px;"></div>
+      
     </section>
     </div>
     </div>
@@ -2424,15 +2468,15 @@ Hey Ciel</textarea>
   // Named so the startup zoom (see STARTUP_ZOOM_MS below) can ease FROM
   // an inflated multiple of this back down TO it every frame, rather
   // than the scale just being a fixed one-time value.
-  const WORLD_GROUP_BASE_SCALE = 0.78;
+  const WORLD_GROUP_BASE_SCALE = 1.08;
   worldGroup.scale.setScalar(WORLD_GROUP_BASE_SCALE);
   // Shrinks the core and wireframe (not the cube rings around them),
   // independently, so there's headroom before the listening pulse
   // crowds the outer PTT cube ring - see their use in animate().
-  const CORE_SHRINK = 0.7;
-  const WIREFRAME_SHRINK = 0.85;
+  const CORE_SHRINK = 0.92;
+  const WIREFRAME_SHRINK = 0.95;
   // The octagon speaking ring sits 20% tighter to the core than it did.
-  const OCTAGON_SHRINK = 0.8;
+  const OCTAGON_SHRINK = 0.9;
   worldGroup.position.y = 1.0;
   scene.add(worldGroup);
   const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
@@ -2818,8 +2862,8 @@ Hey Ciel</textarea>
     // replacing separately-named blue tones), uAccentColor drives the
     // warm/green weave-through accent. Defaults match the tuned-by-eye
     // blue/gold look, so picking neither leaves the current look intact.
-    uBaseColor: { value: new THREE.Color(0x175c99) },
-    uAccentColor: { value: new THREE.Color(0x806b2e) },
+    uBaseColor: { value: new THREE.Color(0x2fa7f0) },
+    uAccentColor: { value: new THREE.Color(0xc99f35) },
     // How hard the background is optically displaced (the fluid/lens
     // refraction). 0 = a perfectly undistorted field.
     uRefract: { value: 1.0 },
@@ -3046,16 +3090,16 @@ Hey Ciel</textarea>
         // travel that the bands are separate COLOURS rather than one hue
         // at different brightnesses, but all of it staying inside the
         // blue->cyan family the base colour sits in.
-        vec3 voidTeal    = hueRot(uBaseColor, -0.035) * 0.14;
-        vec3 blackAccent = uBaseColor * 0.03;
-        vec3 darkBlue    = hueRot(uBaseColor, -0.018) * 0.42;
-        vec3 midBlue     = hueRot(uBaseColor,  0.015) * 0.85;
-        vec3 ltBlue      = hueRot(uBaseColor,  0.040) * 1.05;
-        vec3 paleBlue    = hueRot(uBaseColor,  0.058) * 1.30;
-        vec3 white       = mix(uBaseColor * 1.6, vec3(1.0), 0.55);
+        vec3 voidTeal    = hueRot(uBaseColor, -0.035) * 0.20;
+        vec3 blackAccent = uBaseColor * 0.05;
+        vec3 darkBlue    = hueRot(uBaseColor, -0.018) * 0.72;
+        vec3 midBlue     = hueRot(uBaseColor,  0.015) * 1.25;
+        vec3 ltBlue      = hueRot(uBaseColor,  0.040) * 1.45;
+        vec3 paleBlue    = hueRot(uBaseColor,  0.058) * 1.75;
+        vec3 white       = mix(uBaseColor * 2.1, vec3(1.0), 0.55);
         vec3 deepTeal    = hueRot(uBaseColor,  0.050) * 0.7;
         vec3 warmAccent  = uAccentColor;
-        vec3 coolAccent  = uAccentColor * 0.85;
+        vec3 coolAccent  = uAccentColor * 1.0;
 
         vec3 col = mix(voidTeal, darkBlue, smoothstep(-0.8, -0.1, n));
         col = mix(col, midBlue, smoothstep(-0.2, 0.4, n));
@@ -3176,7 +3220,7 @@ Hey Ciel</textarea>
         // floor instead means the darkest area is still clearly blue, and
         // the vignette still darkens things near the core for contrast -
         // it just never bottoms out at black anymore.
-        vec3 minFloor = uBaseColor * 0.3;
+        vec3 minFloor = uBaseColor * 0.42;
         // Floored at 0.55 rather than running all the way down to 0. At 0
         // the centre of the frame collapsed to a flat minFloor with none
         // of the colour work above surviving - which is why the waves only
@@ -3184,9 +3228,9 @@ Hey Ciel</textarea>
         // middle lets the aurora bands read across the whole background,
         // while the vignette still darkens the centre relative to the
         // edges for contrast behind the core.
-        float vig = mix(0.55, 1.0, vignette) * (1.0 + uAmplitude * 0.35);
+        float vig = mix(0.72, 1.0, vignette) * (1.0 + uAmplitude * 0.35);
         col = mix(minFloor, col, vig);
-        col += col * uAmplitude * 0.15;
+        col += col * uAmplitude * 0.20;
 
         // Camera-lens glare rings: a couple of faint concentric rings
         // near the corners/sides, like a real lens's anamorphic flare
@@ -4600,12 +4644,12 @@ Hey Ciel</textarea>
       const targetX = Number(xPx) - desktopDragGrabOffsetX;
       const targetY = Number(yPx) - desktopDragGrabOffsetY;
       desktopTarget.x = Math.max(
-        0.08,
-        Math.min(0.94, targetX / Math.max(1, window.innerWidth))
+        0.02,
+        Math.min(0.98, targetX / Math.max(1, window.innerWidth))
       );
       desktopTarget.y = Math.max(
-        0.10,
-        Math.min(0.88, targetY / Math.max(1, window.innerHeight))
+        0.04,
+        Math.min(0.96, targetY / Math.max(1, window.innerHeight))
       );
     }
 
@@ -5440,7 +5484,7 @@ const MINI_CHAT_PAD = 3;
   const noticeSound = new Audio('voice_lines/koku.ogg');
   const voiceLineAudio = new Audio();
   noticeSound.volume = 0.8;
-  voiceLineAudio.volume = 0.8;
+  voiceLineAudio.volume = 1.0;
   // Bar caption closes as soon as the real audio actually finishes,
   // rather than only ever on its own fixed 2.5s timer (see
   // scheduleBarCaptionAutoHide) - that timer stays as a fallback for
@@ -5820,7 +5864,7 @@ const MINI_CHAT_PAD = 3;
   // "thinks, then speaks" feel, at the cost of a quiet gap up front
   // while the first clip is synthesised. Off, text streams in as the
   // model writes it - visible sooner, but running ahead of the speech.
-  let captionFollowsSpeech = true;
+  let captionFollowsSpeech = false;
   // Text already revealed because its audio has played. Kept apart from
   // replyBuffer, which is everything the model has WRITTEN - the two
   // deliberately run at different rates.
@@ -5942,12 +5986,29 @@ const MINI_CHAT_PAD = 3;
     }
 
     const box = document.getElementById('caption-box');
-    if (!box || !box.classList.contains('show') || !desktopSubtitleShown) {
+    const el = document.getElementById('caption-text');
+    const visibleText = el ? (el.textContent || '') : '';
+    if (!box || !box.classList.contains('show') || (!desktopSubtitleShown && !visibleText)) {
       desktopSubtitleShown = '';
       desktopSubtitleQueue = '';
       desktopSubtitleSource = '';
-      if (box) box.classList.remove('show');
+      if (box) {
+        box.classList.remove('show', 'closing');
+        box.style.removeProperty('opacity');
+        box.style.removeProperty('visibility');
+      }
+      if (el) {
+        el.textContent = '';
+        el.scrollTop = 0;
+      }
       return;
+    }
+
+    // Synchronize the bookkeeping with the actual DOM. This also covers the
+    // no-audio fallback, where the subtitle can be shown directly without
+    // the audio-start typewriter path.
+    if (!desktopSubtitleShown && visibleText) {
+      desktopSubtitleShown = visibleText;
     }
 
     // Give the viewer a short reading window after Raphael stops speaking.
@@ -5961,7 +6022,15 @@ const MINI_CHAT_PAD = 3;
           desktopSubtitleHideTimer = null;
           desktopSubtitleQueue = '';
           desktopSubtitleSource = '';
-          if (box) box.classList.remove('show');
+          if (box) {
+            box.classList.remove('show', 'closing');
+            box.style.removeProperty('opacity');
+            box.style.removeProperty('visibility');
+          }
+          if (el) {
+            el.textContent = '';
+            el.scrollTop = 0;
+          }
           return;
         }
 
@@ -6135,12 +6204,18 @@ const MINI_CHAT_PAD = 3;
         showCaption(replyBuffer);
       }
     } else if (msg.type === 'subtitle_text') {
-      // Keep the complete Spanish translation in a buffer; the visible
-      // text is typed while Raphael is actually speaking.
+      // Keep the complete Spanish translation in a buffer. Desktop
+      // subtitles must also remain visible when TTS is unavailable or
+      // synthesis fails; waiting for an audio event made a failed voice
+      // engine look like a failed subtitle system too.
       spanishSubtitleActive = true;
       aiThinking = false;
       spokenSoFar = '';
+      desktopSpeechPulseSeen = false;
       setDesktopSubtitleSource(msg.text || '');
+      if (DESKTOP_RAPHAEL_MODE) {
+        showDesktopSubtitle(cleanDesktopSubtitleText(msg.text || ''));
+      }
     } else if (msg.type === 'reply_done') {
       // The server sends the FINAL reply text here, which is not always what
       // was streamed: the guardrails can substitute a reply after generation
@@ -6220,6 +6295,24 @@ const MINI_CHAT_PAD = 3;
       // start its countdown.
       speechInProgress = false;
       finishDesktopSubtitle();
+      // Hard cleanup fallback: finishDesktopSubtitle intentionally animates the
+      // text out, but the box must never survive a completed speech turn.
+      setTimeout(() => {
+        const box = document.getElementById('caption-box');
+        const el = document.getElementById('caption-text');
+        if (box) {
+          box.classList.remove('show', 'closing');
+          box.style.removeProperty('opacity');
+          box.style.removeProperty('visibility');
+        }
+        if (el) {
+          el.textContent = '';
+          el.scrollTop = 0;
+        }
+        desktopSubtitleShown = '';
+        desktopSubtitleQueue = '';
+        desktopSubtitleSource = '';
+      }, 1800);
       desktopSpeechPulseSeen = false;
       if (captionMode === 'bar') scheduleBarCaptionAutoHide();
       spanishSubtitleActive = false;
@@ -7325,8 +7418,8 @@ const MINI_CHAT_PAD = 3;
       ? Math.min(
           0.55,
           Math.max(
-            0.28,
-            0.80 * (340 / Math.max(1, Math.min(window.innerWidth, window.innerHeight)))
+            0.08,
+            0.55 * (340 / Math.max(1, Math.min(window.innerWidth, window.innerHeight)))
           )
         ) * desktopPresenceScale
       : 1.0;
@@ -9140,6 +9233,20 @@ const MINI_CHAT_PAD = 3;
   }
   function applySettings(saved) {
     if (!saved || typeof saved !== 'object') return;
+
+    // Migrate the two legacy low-contrast palette values. Without this,
+    // an old hud_settings.json silently overwrites the brighter defaults
+    // every time the page connects.
+    if (saved['bg-base-color-picker'] === '#175c99') {
+      saved['bg-base-color-picker'] = '#36b6ff';
+    }
+    if (saved['bg-accent-color-picker'] === '#806b2e') {
+      saved['bg-accent-color-picker'] = '#f0b43c';
+    }
+    // Migrate the previous white model glow to the brighter Raphael blue.
+    if (saved['theme-color-picker'] === '#ffffff') {
+      saved['theme-color-picker'] = '#38b8ff';
+    }
     if (typeof saved['sfx-gains'] === 'string') {
       try {
         const g = JSON.parse(saved['sfx-gains']);
@@ -9198,6 +9305,82 @@ const MINI_CHAT_PAD = 3;
     }
     setTimeout(() => { saveSettingsBtn.textContent = 'SAVE SETTINGS'; }, 1500);
   });
+
+  const personaSaveBtn = document.getElementById('persona-save-btn');
+  const personaStatus = document.getElementById('persona-save-status');
+  const personaInputs = [
+    'persona-use-name-toggle',
+    'persona-name-input',
+    'persona-interests-input',
+    'persona-traits-input',
+    'persona-tone-select',
+    'persona-dislikes-input',
+  ];
+
+  function collectPersona() {
+    const data = {};
+    personaInputs.forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) {
+        data[id] = el.type === 'checkbox' ? el.checked : el.value;
+      }
+    });
+    return data;
+  }
+
+  function applyPersona(data) {
+    if (!data || typeof data !== 'object') return;
+    personaInputs.forEach((id) => {
+      const el = document.getElementById(id);
+      if (el && data[id] !== undefined) {
+        if (el.type === 'checkbox') el.checked = data[id];
+        else el.value = data[id];
+      }
+    });
+  }
+
+  // Load persona from server on connect
+  function requestPersonaLoad() {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'persona_load' }));
+    }
+  }
+
+  // Save persona to server
+  function requestPersonaSave() {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      const data = collectPersona();
+      ws.send(JSON.stringify({ type: 'persona_save', persona: data }));
+      if (personaStatus) personaStatus.textContent = 'Guardando...';
+    } else if (personaStatus) {
+      personaStatus.textContent = 'No conectado';
+    }
+  }
+
+  if (personaSaveBtn) {
+    personaSaveBtn.addEventListener('click', requestPersonaSave);
+  }
+
+  // Listen for persona_load response
+  const originalHandleServerMessage = handleServerMessage;
+  handleServerMessage = function(event) {
+    const msg = JSON.parse(event.data);
+    if (msg.type === 'persona_load' && msg.persona) {
+      applyPersona(msg.persona);
+    } else if (msg.type === 'persona_save' && msg.ok) {
+      if (personaStatus) {
+        personaStatus.textContent = 'Perfil guardado correctamente';
+        setTimeout(() => { personaStatus.textContent = ''; }, 3000);
+      }
+    } else if (msg.type === 'persona_save' && msg.error) {
+      if (personaStatus) personaStatus.textContent = 'Error: ' + msg.error;
+    }
+    return originalHandleServerMessage(event);
+  };
+
+  // Request persona on initial connect
+  setTimeout(requestPersonaLoad, 1000);
+
 
   // ---------- Visual size sliders ----------
   // Multipliers applied on top of each group's existing idle-breathing
@@ -9388,8 +9571,8 @@ const MINI_CHAT_PAD = 3;
   // Same double-click-to-reset pattern as the sliders above, works
   // identically for <input type="color"> - just resets .value and
   // dispatches 'input' so each picker's own listener re-applies it.
-  addResetOnDoubleClick(bgBaseColorPicker, '#175c99');
-  addResetOnDoubleClick(bgAccentColorPicker, '#806b2e');
+  addResetOnDoubleClick(bgBaseColorPicker, '#2fa7f0');
+  addResetOnDoubleClick(bgAccentColorPicker, '#c99f35');
   addResetOnDoubleClick(colorPicker, '#ffffff');
   addResetOnDoubleClick(document.getElementById('speaking-glow-slider'), 200);
   addResetOnDoubleClick(visualPosXSlider, 0);
@@ -9529,7 +9712,8 @@ const MINI_CHAT_PAD = 3;
   // The page never holds a real key it did not just receive from the
   // user: the server sends MASKS, and a mask sent back is ignored rather
   // than stored, so a saved key can be replaced but never read out.
-  const AI_KEY_FIELDS = { anthropic: 'ai-key-anthropic',
+  const AI_KEY_FIELDS = { nvidia: 'ai-key-nvidia',
+                          anthropic: 'ai-key-anthropic',
                           openai: 'ai-key-openai',
                           tts: 'ai-key-tts' };
   function renderAiSettings(cfg) {
@@ -9940,7 +10124,7 @@ const MINI_CHAT_PAD = 3;
     captionMoveBtn,
   ].forEach(addPressFeedback);
 
-  let masterVolume = 0.8;
+  let masterVolume = 1.0;
   const volumeSlider = document.getElementById('volume-slider');
   volumeSlider.addEventListener('input', () => {
     masterVolume = Number(volumeSlider.value) / 100;

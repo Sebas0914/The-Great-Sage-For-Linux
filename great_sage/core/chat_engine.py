@@ -80,7 +80,24 @@ class ChatEngine:
         self._last_activity = now
         self.history.append({"role": "user", "content": user_input})
 
-        outgoing = list(self.history)
+        # Keep remote first-token latency bounded as conversations grow.
+        # Sending the entire transcript on every NVIDIA request makes prefill
+        # progressively slower; durable facts are handled separately by memory.
+        # Preserve the system prompt and only the most recent conversation turns.
+        system_message = self.history[0]
+        recent = self.history[1:]
+        max_history_chars = 16000
+        kept = []
+        total = 0
+        for msg in reversed(recent):
+            content = str(msg.get("content") or "")
+            cost = len(content)
+            if kept and total + cost > max_history_chars:
+                break
+            kept.append(msg)
+            total += cost
+        kept.reverse()
+        outgoing = [system_message] + kept
         if is_fresh:
             outgoing[-1] = {
                 "role": "user",

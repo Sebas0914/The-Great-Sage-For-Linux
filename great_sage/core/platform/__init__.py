@@ -7,6 +7,8 @@ available, and keeps the platform factory as the normal entry point.
 
 from .base import AppLauncher, DataPaths, Hotkey, WindowInfo
 from .factory import get_platform
+from .detector import display_server, desktop_environment, os_name, summary
+from .capabilities import PlatformCapabilities, detect_capabilities
 
 __all__ = [
     "AppLauncher",
@@ -17,6 +19,12 @@ __all__ = [
     "LinuxX11Platform",
     "WindowsPlatform",
     "get_platform",
+    "PlatformCapabilities",
+    "detect_capabilities",
+    "display_server",
+    "desktop_environment",
+    "os_name",
+    "summary",
 ]
 
 

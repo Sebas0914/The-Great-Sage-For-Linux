@@ -1,0 +1,44 @@
+name: Build Wayland native bridge
+
+on:
+  push:
+    branches:
+      - linux-generic-platform
+    paths:
+      - "native/gs_layer_config.cpp"
+      - "native/build_layershell.sh"
+      - ".github/workflows/build-wayland-native.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install native dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y g++ qt6-base-dev qt6-base-private-dev liblayershellqtinterface-dev libwayland-dev
+
+      - name: Build LayerShellQt bridge
+        run: |
+          chmod +x native/build_layershell.sh
+          native/build_layershell.sh
+
+      - name: Commit generated native library
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add native/libgs_layer_config.so
+          if git diff --cached --quiet; then
+            echo "Native library is already current."
+            exit 0
+          fi
+          git commit -m "Build LayerShellQt native bridge"
+          git push

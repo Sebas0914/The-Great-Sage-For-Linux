@@ -20,7 +20,7 @@ NVIDIA_API_MODEL_COMPLEX = os.environ.get("GREAT_SAGE_NVIDIA_COMPLEX_MODEL", "nv
 NVIDIA_API_TIMEOUT = int(os.environ.get("GREAT_SAGE_NVIDIA_TIMEOUT", "120"))
 # Secret is intentionally supplied at runtime; never commit the key.
 NVIDIA_API_KEY_ENV = "GREAT_SAGE_NVIDIA_API_KEY"
-# Nemotron 3.5 Lightning: keep IA1/classification non-thinking and give IA2 a bounded reasoning budget.\nNVIDIA_FAST_REASONING_BUDGET = int(os.environ.get("GREAT_SAGE_NVIDIA_FAST_REASONING_BUDGET", "0"))\nNVIDIA_COMPLEX_REASONING_BUDGET = int(os.environ.get("GREAT_SAGE_NVIDIA_COMPLEX_REASONING_BUDGET", "8192"))
+# Nemotron 3.5 Lightning: keep IA1/classification non-thinking and give IA2 a bounded reasoning budget.\nNVIDIA_FAST_REASONING_BUDGET = int(os.environ.get("GREAT_SAGE_NVIDIA_FAST_REASONING_BUDGET", "0"))\nNVIDIA_COMPLEX_REASONING_BUDGET = int(os.environ.get("GREAT_SAGE_NVIDIA_COMPLEX_REASONING_BUDGET", "0"))
 LOCAL_ONLY = os.environ.get("GREAT_SAGE_LOCAL_ONLY", "false").lower() in {"1", "true", "yes", "on"}
 WEB_TOOLS_ENABLED = os.environ.get("GREAT_SAGE_WEB_TOOLS", "false").lower() in {"1", "true", "yes", "on"}
 INPUT_LANGUAGE = os.environ.get("GREAT_SAGE_INPUT_LANGUAGE", "es")
@@ -471,7 +471,7 @@ HUD_BACKGROUND_COLOR = "#070d14"
 # actually holds, since prompt wording alone did not - measured, the
 # hardened prompt still failed 8/12 attack samples on qwen2.5:3b and 6/12
 # on qwen3:8b.
-GUARDRAILS_SELF_REVIEW = True
+GUARDRAILS_SELF_REVIEW = os.environ.get("GREAT_SAGE_GUARDRAILS_SELF_REVIEW", "false").lower() in {"1", "true", "yes", "on"}
 
 # Network timeouts, in seconds, for talking to the local Ollama server.
 REQUEST_TIMEOUT_SECONDS = 60
@@ -705,7 +705,7 @@ F5_RVC_LOCK_JAPANESE_REFERENCE = (
 # ~0.8s sooner - but a listening A/B rejected 4 outright as clearly
 # degraded. 8 is the floor for acceptable quality on this voice, not
 # merely a default nobody revisited.
-F5_NFE_STEP = 16
+F5_NFE_STEP = 8
 
 # Synthesize the whole reply as ONE clip, rather than streaming it out in
 # sentence-sized chunks as the model writes.
@@ -725,7 +725,7 @@ F5_NFE_STEP = 16
 # and stumbles.
 #
 # Set False to go back to streaming chunks.
-VOICE_SINGLE_SHOT = True
+VOICE_SINGLE_SHOT = False
 
 # Language XTTS actually speaks in. SYSTEM_PROMPT's on-screen chat text is
 # English; CLONE_TRANSLATE below is what bridges the two by translating

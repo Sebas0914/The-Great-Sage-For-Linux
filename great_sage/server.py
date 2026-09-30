@@ -500,11 +500,22 @@ def _suggest_title(provider, messages):
         "explanation - reply with the title and nothing else." + NL +
         "Examples: Clevatess Sound Design, TTS Troubleshooting, "
         "AI Model Research." + NL + NL + body)
-    try:
-        out = provider.send_message([{"role": "user", "content": prompt}])
-    except Exception:
-        log.exception("Title generation failed")
-        return None
+    # Titles are UI metadata, not part of the answer. Never spend an extra
+    # model round-trip on them while the assistant is serving a live request:
+    # that background call can contend with NVIDIA/Ollama and make the HUD
+    # feel slower. Use a deterministic title from the opening user message.
+    first_user = next((m for m in (messages or [])
+                       if isinstance(m, dict) and m.get("role") == "user"
+                       and str(m.get("text", "")).strip()), None)
+    if first_user:
+        raw = str(first_user.get("text", "")).strip()
+        title = re.sub(r"\\s+", " ", raw).strip(" .!?¿¡")
+        words = title.split()
+        title = " ".join(words[:6])
+        if len(title) > 48:
+            title = title[:48].rsplit(" ", 1)[0]
+        return title or None
+    return None
     title = (out or "").strip().strip(chr(34) + chr(39) + ".")
     title = title.splitlines()[0].strip() if title else ""
     # A model that explains itself instead of naming the chat is worse
@@ -638,6 +649,13 @@ def _translate_spoken_japanese(provider, text: str) -> str:
         ])
         return (out or "").strip()
 
+    # The active Great Sage prompt already requests Japanese output.
+    # When the model has complied, do not pay for a second NVIDIA round-trip
+    # merely to translate Japanese into Japanese. Keep the translation path
+    # for English/Spanish output so the voice remains robust if routing changes.
+    if looks_japanese(value):
+        return value
+
     try:
         translated = translate(
             "Translate this reply into natural Japanese for Raphael to speak."
@@ -729,7 +747,6 @@ def _handle_chat(text, engine, voice, sink, websocket, loop,
     # result still dropped the ends of sentences. One clip has no seams.
     streaming_speech = (
         not getattr(settings, "VOICE_SINGLE_SHOT", True)
-        and not getattr(settings, "VOICE_SPEAK_JAPANESE", True)
         and voice is not None
         and hasattr(voice, "speak_stream")
         and voice.current_sink is sink
@@ -1075,9 +1092,11 @@ def _translate_subtitles(provider, text: str) -> str:
             return translated
 
         log.error(
-            "Could not produce a validated Spanish subtitle; suppressing "
-            "the Japanese fallback instead of displaying the wrong language."
+            "Could not produce a validated Spanish subtitle."
         )
+        # Keep the turn visible even when the subtitle translation backend
+        # fails. The original response is Japanese by design, so do not
+        # pretend it is Spanish; the HUD will show its normal reply fallback.
         return ""
 
     except Exception:
