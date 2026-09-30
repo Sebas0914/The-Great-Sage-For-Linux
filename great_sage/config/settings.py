@@ -20,7 +20,7 @@ NVIDIA_API_MODEL_COMPLEX = os.environ.get("GREAT_SAGE_NVIDIA_COMPLEX_MODEL", "nv
 NVIDIA_API_TIMEOUT = int(os.environ.get("GREAT_SAGE_NVIDIA_TIMEOUT", "120"))
 # Secret is intentionally supplied at runtime; never commit the key.
 NVIDIA_API_KEY_ENV = "GREAT_SAGE_NVIDIA_API_KEY"
-# Nemotron 3.5 Lightning: keep IA1/classification non-thinking and give IA2 a bounded reasoning budget.\nNVIDIA_FAST_REASONING_BUDGET = int(os.environ.get("GREAT_SAGE_NVIDIA_FAST_REASONING_BUDGET", "0"))\nNVIDIA_COMPLEX_REASONING_BUDGET = int(os.environ.get("GREAT_SAGE_NVIDIA_COMPLEX_REASONING_BUDGET", "8192"))
+# Nemotron 3.5 Lightning: keep IA1/classification non-thinking and give IA2 a bounded reasoning budget.\nNVIDIA_FAST_REASONING_BUDGET = int(os.environ.get("GREAT_SAGE_NVIDIA_FAST_REASONING_BUDGET", "0"))\nNVIDIA_COMPLEX_REASONING_BUDGET = int(os.environ.get("GREAT_SAGE_NVIDIA_COMPLEX_REASONING_BUDGET", "0"))
 LOCAL_ONLY = os.environ.get("GREAT_SAGE_LOCAL_ONLY", "false").lower() in {"1", "true", "yes", "on"}
 WEB_TOOLS_ENABLED = os.environ.get("GREAT_SAGE_WEB_TOOLS", "false").lower() in {"1", "true", "yes", "on"}
 INPUT_LANGUAGE = os.environ.get("GREAT_SAGE_INPUT_LANGUAGE", "es")
