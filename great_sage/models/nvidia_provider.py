@@ -239,12 +239,14 @@ class NvidiaRoutingProvider(ModelProvider):
 
     def _looks_complex(self, messages):
         text = self._user_text(messages)
+        # Never spend an extra model round-trip just to classify an ordinary
+        # spoken turn. The fast and complex NVIDIA routes currently use the
+        # same Nemotron model, so the classifier only adds latency without
+        # changing the selected model. Explicitly complex requests still get
+        # the reasoning route through the deterministic markers/length check.
         if self._obvious_complex(text):
             self.last_classification = "complex"
             return True
-        classified = self._classify(text)
-        if classified is not None:
-            return classified
         self.last_classification = "fast"
         return False
 
