@@ -292,6 +292,7 @@ class OverlayView(QWebEngineView):
         self._wayland_input = None
         self._wayland_interactive_rects = []
         self._input_mask_generation = 0
+        # Qt's native Wayland input mask is the primary click-through mechanism.
         self._drag_press_pos = None
         self._dragging = False
         self._drag_offset = None
@@ -448,6 +449,16 @@ class OverlayView(QWebEngineView):
                 continue
 
         self._wayland_interactive_rects = clean_rects
+        # Keep the compositor input region in sync through Qt itself. This works
+        # without the optional native wl_surface bridge and avoids a fullscreen
+        # transparent overlay swallowing clicks intended for windows underneath.
+        try:
+            region = QRegion()
+            for rx, ry, rw, rh in clean_rects:
+                region = region.united(QRegion(int(rx), int(ry), int(rw), int(rh)))
+            self.setMask(region)
+        except Exception as exc:
+            print(f"[overlay] Qt Wayland input mask failed: {exc}", flush=True)
         print(
             f"[overlay] INPUT REGION rects={clean_rects} "
             f"surface={w}x{h}",
