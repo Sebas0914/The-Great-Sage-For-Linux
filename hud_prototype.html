@@ -2061,7 +2061,7 @@ body.mini.pet-state-confused #canvas-wrap { animation: gs-pet-confused 720ms eas
               <span>Accent</span>
             </div>
             <div class="color-swatch-item">
-              <input type="color" id="theme-color-picker" class="color-swatch-btn" value="#ffffff">
+              <input type="color" id="theme-color-picker" class="color-swatch-btn" value="#38b8ff">
               <span>Core glow</span>
             </div>
           </div>
@@ -2862,8 +2862,8 @@ Hey Ciel</textarea>
     // replacing separately-named blue tones), uAccentColor drives the
     // warm/green weave-through accent. Defaults match the tuned-by-eye
     // blue/gold look, so picking neither leaves the current look intact.
-    uBaseColor: { value: new THREE.Color(0x2fa7f0) },
-    uAccentColor: { value: new THREE.Color(0xc99f35) },
+    uBaseColor: { value: new THREE.Color(0x36b6ff) },
+    uAccentColor: { value: new THREE.Color(0xf0b43c) },
     // How hard the background is optically displaced (the fluid/lens
     // refraction). 0 = a perfectly undistorted field.
     uRefract: { value: 1.0 },
@@ -6014,7 +6014,15 @@ const MINI_CHAT_PAD = 3;
           desktopSubtitleHideTimer = null;
           desktopSubtitleQueue = '';
           desktopSubtitleSource = '';
-          if (box) box.classList.remove('show');
+          if (box) {
+            box.classList.remove('show', 'closing');
+            box.style.removeProperty('opacity');
+            box.style.removeProperty('visibility');
+          }
+          if (el) {
+            el.textContent = '';
+            el.scrollTop = 0;
+          }
           return;
         }
 
@@ -9204,10 +9212,14 @@ const MINI_CHAT_PAD = 3;
     // an old hud_settings.json silently overwrites the brighter defaults
     // every time the page connects.
     if (saved['bg-base-color-picker'] === '#175c99') {
-      saved['bg-base-color-picker'] = '#2fa7f0';
+      saved['bg-base-color-picker'] = '#36b6ff';
     }
     if (saved['bg-accent-color-picker'] === '#806b2e') {
-      saved['bg-accent-color-picker'] = '#c99f35';
+      saved['bg-accent-color-picker'] = '#f0b43c';
+    }
+    // Migrate the previous white model glow to the brighter Raphael blue.
+    if (saved['theme-color-picker'] === '#ffffff') {
+      saved['theme-color-picker'] = '#38b8ff';
     }
     if (typeof saved['sfx-gains'] === 'string') {
       try {
