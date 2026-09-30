@@ -60,3 +60,27 @@ extern "C" int gs_position_layer(
 
     return 0;
 }
+
+
+extern "C" int gs_configure_panel_layer(void *window_ptr, int width, int height)
+{
+    auto *window = static_cast<QWindow *>(window_ptr);
+    if (!window) return 1;
+    auto *layer = LayerShellQt::Window::get(window);
+    if (!layer) return 2;
+    LayerShellQt::Window::Anchors anchors;
+    anchors |= LayerShellQt::Window::AnchorTop;
+    anchors |= LayerShellQt::Window::AnchorBottom;
+    anchors |= LayerShellQt::Window::AnchorLeft;
+    anchors |= LayerShellQt::Window::AnchorRight;
+    layer->setAnchors(anchors);
+    layer->setMargins(QMargins(0, 0, 0, 0));
+    layer->setDesiredSize(QSize(width, height));
+    layer->setExclusiveZone(-1);
+    layer->setLayer(LayerShellQt::Window::LayerOverlay);
+    layer->setKeyboardInteractivity(
+        LayerShellQt::Window::KeyboardInteractivityExclusive
+    );
+    layer->setActivateOnShow(true);
+    return 0;
+}
