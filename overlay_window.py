@@ -1248,23 +1248,17 @@ class PanelView(QWebEngineView):
         self.loadFinished.connect(lambda _ok: self._install_mouse_filter())
 
     def showEvent(self, event):
-        # The old fixed 560x640 panel was tiny on a 1080p/1440p desktop.
-        # Size the standalone chat/settings/history window from the current
-        # screen so the UI is readable while still leaving a desktop margin.
+        # LayerShellQt must be configured before the Wayland surface is
+        # mapped. The actual configure call is now performed in main(),
+        # immediately before show(). Doing it here is too late: Qt has
+        # already committed the normal toplevel surface, so KDE can keep
+        # treating the panel as a small ordinary window behind other apps.
         super().showEvent(event)
         self._install_mouse_filter()
-        screen = self.screen() or QGuiApplication.primaryScreen()
-        if screen is not None:
-            area = screen.geometry()
-            width = area.width()
-            height = area.height()
-            self.setGeometry(area)
-            if WAYLAND_SESSION:
-                self._configure_panel_wayland_layer(width, height)
-            else:
-                self.showFullScreen()
-                self.raise_()
-                self.activateWindow()
+        if not WAYLAND_SESSION:
+            self.showFullScreen()
+            self.raise_()
+            self.activateWindow()
         QTimer.singleShot(0, self._install_mouse_filter)
 
     def _install_mouse_filter(self):
@@ -1466,6 +1460,20 @@ def main() -> int:
                 panel.showMinimized()
 
         panel.titleChanged.connect(_on_panel_title)
+
+        # Determine the final panel geometry and configure LayerShellQt
+        # BEFORE mapping the Wayland surface. This is the critical ordering:
+        # once show() commits the surface as a normal xdg_toplevel, changing
+        # it afterwards cannot reliably turn it into a layer-shell overlay.
+        screen = QGuiApplication.primaryScreen()
+        if screen is not None:
+            area = screen.geometry()
+            panel.setGeometry(area)
+            if WAYLAND_SESSION:
+                panel._configure_panel_wayland_layer(
+                    int(area.width()), int(area.height())
+                )
+
         url = args.url or QUrl.fromLocalFile(
             os.path.join(HERE, "hud_prototype.html")).toString()
         panel.load(QUrl(f"{url}?panel={args.panel}"))
