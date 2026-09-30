@@ -1241,6 +1241,10 @@ class PanelView(QWebEngineView):
             | Qt.Tool
         )
         self.resize(*PANEL_SIZE)
+        if WAYLAND_SESSION:
+            screen = QGuiApplication.primaryScreen()
+            if screen is not None:
+                self.setGeometry(screen.geometry())
         self.setWindowTitle(f"Great Sage - {section}")
         self._wayland_layer = False
         self._wayland_layer_lib = None
@@ -1294,7 +1298,7 @@ class PanelView(QWebEngineView):
             screen = QGuiApplication.primaryScreen()
             if qwindow is not None and screen is not None:
                 qwindow.setScreen(screen)
-            result = int(layer.gs_configure_panel_layer(ptr, int(width), int(height)))
+            result = int(layer.gs_configure_panel_layer(ptr, int(self.width()), int(self.height())))
             if result != 0:
                 print(
                     f"[panel] gs_configure_layer returned {result}",
