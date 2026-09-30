@@ -17,7 +17,7 @@ extern "C" int gs_configure_layer(
     if (!layer) return 2;
 
     // The desktop Raphael host is a compositor-managed FULLSCREEN
-    // transparent surface. The visual itself remains compact and is moved
+    // transparent surface. Qt is initialized at monitor geometry; the visual itself remains compact and is moved
     // inside this surface by hud_prototype.html.
     //
     // The previous implementation switched to fullscreen only when the
