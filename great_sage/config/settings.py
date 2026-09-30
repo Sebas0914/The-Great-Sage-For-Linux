@@ -725,7 +725,7 @@ F5_NFE_STEP = 16
 # and stumbles.
 #
 # Set False to go back to streaming chunks.
-VOICE_SINGLE_SHOT = True
+VOICE_SINGLE_SHOT = False
 
 # Language XTTS actually speaks in. SYSTEM_PROMPT's on-screen chat text is
 # English; CLONE_TRANSLATE below is what bridges the two by translating
