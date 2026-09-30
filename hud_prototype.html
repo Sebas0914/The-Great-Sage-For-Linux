@@ -2053,11 +2053,11 @@ body.mini.pet-state-confused #canvas-wrap { animation: gs-pet-confused 720ms eas
           <summary>Colour</summary>
           <div class="color-swatch-row">
             <div class="color-swatch-item">
-              <input type="color" id="bg-base-color-picker" class="color-swatch-btn" value="#175c99">
+              <input type="color" id="bg-base-color-picker" class="color-swatch-btn" value="#1b6fb0">
               <span>Background</span>
             </div>
             <div class="color-swatch-item">
-              <input type="color" id="bg-accent-color-picker" class="color-swatch-btn" value="#806b2e">
+              <input type="color" id="bg-accent-color-picker" class="color-swatch-btn" value="#9a7828">
               <span>Accent</span>
             </div>
             <div class="color-swatch-item">
@@ -2862,8 +2862,8 @@ Hey Ciel</textarea>
     // replacing separately-named blue tones), uAccentColor drives the
     // warm/green weave-through accent. Defaults match the tuned-by-eye
     // blue/gold look, so picking neither leaves the current look intact.
-    uBaseColor: { value: new THREE.Color(0x175c99) },
-    uAccentColor: { value: new THREE.Color(0x806b2e) },
+    uBaseColor: { value: new THREE.Color(0x1b6fb0) },
+    uAccentColor: { value: new THREE.Color(0x9a7828) },
     // How hard the background is optically displaced (the fluid/lens
     // refraction). 0 = a perfectly undistorted field.
     uRefract: { value: 1.0 },
@@ -9432,8 +9432,8 @@ const MINI_CHAT_PAD = 3;
   // Same double-click-to-reset pattern as the sliders above, works
   // identically for <input type="color"> - just resets .value and
   // dispatches 'input' so each picker's own listener re-applies it.
-  addResetOnDoubleClick(bgBaseColorPicker, '#175c99');
-  addResetOnDoubleClick(bgAccentColorPicker, '#806b2e');
+  addResetOnDoubleClick(bgBaseColorPicker, '#1b6fb0');
+  addResetOnDoubleClick(bgAccentColorPicker, '#9a7828');
   addResetOnDoubleClick(colorPicker, '#ffffff');
   addResetOnDoubleClick(document.getElementById('speaking-glow-slider'), 200);
   addResetOnDoubleClick(visualPosXSlider, 0);
