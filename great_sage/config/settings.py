@@ -471,7 +471,7 @@ HUD_BACKGROUND_COLOR = "#070d14"
 # actually holds, since prompt wording alone did not - measured, the
 # hardened prompt still failed 8/12 attack samples on qwen2.5:3b and 6/12
 # on qwen3:8b.
-GUARDRAILS_SELF_REVIEW = True
+GUARDRAILS_SELF_REVIEW = os.environ.get("GREAT_SAGE_GUARDRAILS_SELF_REVIEW", "false").lower() in {"1", "true", "yes", "on"}
 
 # Network timeouts, in seconds, for talking to the local Ollama server.
 REQUEST_TIMEOUT_SECONDS = 60
