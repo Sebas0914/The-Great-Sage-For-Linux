@@ -17,6 +17,9 @@ from typing import Dict, Optional
 from platformdirs import user_data_dir
 
 from .base import AppLauncher, DataPaths, Hotkey, WindowInfo
+from .capabilities import detect_capabilities
+from .common import LinuxLauncher, LinuxDataPaths
+from .detector import is_kde
 
 log = logging.getLogger(__name__)
 
@@ -28,7 +31,7 @@ def _desktop_command(args):
     )
 
 
-class LinuxWaylandLauncher(AppLauncher):
+class LinuxWaylandLauncher(LinuxLauncher):
     def _desktop_apps(self) -> Dict[str, str]:
         found = {}
         roots = [
@@ -93,20 +96,21 @@ class LinuxWaylandLauncher(AppLauncher):
         """Capture the Wayland desktop through KDE Spectacle synchronously."""
         path = str(Path(output_path).expanduser())
         Path(path).parent.mkdir(parents=True, exist_ok=True)
-        spectacle = shutil.which("spectacle")
-        if not spectacle:
-            raise RuntimeError(
-                "KDE Spectacle is not installed; Wayland screen capture is unavailable."
-            )
-
         mode = (region or "screen").strip().lower()
         capture_mode = "--activewindow" if mode in {"window", "focused", "active"} else "--fullscreen"
+        spectacle = shutil.which("spectacle")
+        grim = shutil.which("grim")
+        if spectacle:
+            command = [spectacle, "--background", "--nonotify", capture_mode, "--output", path]
+        elif grim and capture_mode == "--fullscreen":
+            command = [grim, path]
+        else:
+            raise RuntimeError(
+                "Wayland screen capture is unavailable: install grim, or KDE Spectacle."
+            )
         try:
             result = subprocess.run(
-                [
-                    spectacle, "--background", "--nonotify",
-                    capture_mode, "--output", path,
-                ],
+                command,
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.PIPE,
@@ -201,8 +205,9 @@ class LinuxWaylandWindowInfo(WindowInfo):
     def __init__(self):
         self._title = None
         self._pid = None
-        self._bridge = _KWinBridge(self)
-        self._bridge.start()
+        self._bridge = _KWinBridge(self) if is_kde() else None
+        if self._bridge:
+            self._bridge.start()
 
     def focused_window_title(self) -> Optional[str]:
         return self._title
@@ -218,18 +223,15 @@ class LinuxWaylandWindowInfo(WindowInfo):
 
     @property
     def bridge_error(self):
-        return self._bridge.error
+        return self._bridge.error if self._bridge else None
 
     def stop(self):
-        self._bridge.stop()
+        if self._bridge:
+            self._bridge.stop()
 
 
-class LinuxWaylandDataPaths(DataPaths):
-    def data_dir(self) -> str:
-        override = os.environ.get("GREAT_SAGE_DATA_DIR")
-        if override:
-            return os.path.abspath(os.path.expanduser(override))
-        return user_data_dir("GreatSage", "GreatSage")
+class LinuxWaylandDataPaths(LinuxDataPaths):
+    pass
 
 
 class PortalHotkey(Hotkey):
@@ -583,3 +585,7 @@ class LinuxWaylandPlatform:
     @property
     def paths(self):
         return LinuxWaylandDataPaths()
+
+    @property
+    def capabilities(self):
+        return detect_capabilities()
