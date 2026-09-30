@@ -9199,6 +9199,16 @@ const MINI_CHAT_PAD = 3;
   }
   function applySettings(saved) {
     if (!saved || typeof saved !== 'object') return;
+
+    // Migrate the two legacy low-contrast palette values. Without this,
+    // an old hud_settings.json silently overwrites the brighter defaults
+    // every time the page connects.
+    if (saved['bg-base-color-picker'] === '#175c99') {
+      saved['bg-base-color-picker'] = '#2fa7f0';
+    }
+    if (saved['bg-accent-color-picker'] === '#806b2e') {
+      saved['bg-accent-color-picker'] = '#c99f35';
+    }
     if (typeof saved['sfx-gains'] === 'string') {
       try {
         const g = JSON.parse(saved['sfx-gains']);
