@@ -9243,6 +9243,82 @@ const MINI_CHAT_PAD = 3;
     setTimeout(() => { saveSettingsBtn.textContent = 'SAVE SETTINGS'; }, 1500);
   });
 
+  const personaSaveBtn = document.getElementById('persona-save-btn');
+  const personaStatus = document.getElementById('persona-save-status');
+  const personaInputs = [
+    'persona-use-name-toggle',
+    'persona-name-input',
+    'persona-interests-input',
+    'persona-traits-input',
+    'persona-tone-select',
+    'persona-dislikes-input',
+  ];
+
+  function collectPersona() {
+    const data = {};
+    personaInputs.forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) {
+        data[id] = el.type === 'checkbox' ? el.checked : el.value;
+      }
+    });
+    return data;
+  }
+
+  function applyPersona(data) {
+    if (!data || typeof data !== 'object') return;
+    personaInputs.forEach((id) => {
+      const el = document.getElementById(id);
+      if (el && data[id] !== undefined) {
+        if (el.type === 'checkbox') el.checked = data[id];
+        else el.value = data[id];
+      }
+    });
+  }
+
+  // Load persona from server on connect
+  function requestPersonaLoad() {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'persona_load' }));
+    }
+  }
+
+  // Save persona to server
+  function requestPersonaSave() {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      const data = collectPersona();
+      ws.send(JSON.stringify({ type: 'persona_save', persona: data }));
+      if (personaStatus) personaStatus.textContent = 'Guardando...';
+    } else if (personaStatus) {
+      personaStatus.textContent = 'No conectado';
+    }
+  }
+
+  if (personaSaveBtn) {
+    personaSaveBtn.addEventListener('click', requestPersonaSave);
+  }
+
+  // Listen for persona_load response
+  const originalHandleServerMessage = handleServerMessage;
+  handleServerMessage = function(event) {
+    const msg = JSON.parse(event.data);
+    if (msg.type === 'persona_load' && msg.persona) {
+      applyPersona(msg.persona);
+    } else if (msg.type === 'persona_save' && msg.ok) {
+      if (personaStatus) {
+        personaStatus.textContent = 'Perfil guardado correctamente';
+        setTimeout(() => { personaStatus.textContent = ''; }, 3000);
+      }
+    } else if (msg.type === 'persona_save' && msg.error) {
+      if (personaStatus) personaStatus.textContent = 'Error: ' + msg.error;
+    }
+    return originalHandleServerMessage(event);
+  };
+
+  // Request persona on initial connect
+  setTimeout(requestPersonaLoad, 1000);
+
+
   // ---------- Visual size sliders ----------
   // Multipliers applied on top of each group's existing idle-breathing
   // scale in the animate loop above - default 1 (slider at 100%) so
