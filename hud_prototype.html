@@ -2053,11 +2053,11 @@ body.mini.pet-state-confused #canvas-wrap { animation: gs-pet-confused 720ms eas
           <summary>Colour</summary>
           <div class="color-swatch-row">
             <div class="color-swatch-item">
-              <input type="color" id="bg-base-color-picker" class="color-swatch-btn" value="#2589d1">
+              <input type="color" id="bg-base-color-picker" class="color-swatch-btn" value="#2fa7f0">
               <span>Background</span>
             </div>
             <div class="color-swatch-item">
-              <input type="color" id="bg-accent-color-picker" class="color-swatch-btn" value="#b18a2d">
+              <input type="color" id="bg-accent-color-picker" class="color-swatch-btn" value="#c99f35">
               <span>Accent</span>
             </div>
             <div class="color-swatch-item">
@@ -2468,15 +2468,15 @@ Hey Ciel</textarea>
   // Named so the startup zoom (see STARTUP_ZOOM_MS below) can ease FROM
   // an inflated multiple of this back down TO it every frame, rather
   // than the scale just being a fixed one-time value.
-  const WORLD_GROUP_BASE_SCALE = 0.90;
+  const WORLD_GROUP_BASE_SCALE = 1.08;
   worldGroup.scale.setScalar(WORLD_GROUP_BASE_SCALE);
   // Shrinks the core and wireframe (not the cube rings around them),
   // independently, so there's headroom before the listening pulse
   // crowds the outer PTT cube ring - see their use in animate().
-  const CORE_SHRINK = 0.82;
-  const WIREFRAME_SHRINK = 0.85;
+  const CORE_SHRINK = 0.92;
+  const WIREFRAME_SHRINK = 0.95;
   // The octagon speaking ring sits 20% tighter to the core than it did.
-  const OCTAGON_SHRINK = 0.8;
+  const OCTAGON_SHRINK = 0.9;
   worldGroup.position.y = 1.0;
   scene.add(worldGroup);
   const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
@@ -2862,8 +2862,8 @@ Hey Ciel</textarea>
     // replacing separately-named blue tones), uAccentColor drives the
     // warm/green weave-through accent. Defaults match the tuned-by-eye
     // blue/gold look, so picking neither leaves the current look intact.
-    uBaseColor: { value: new THREE.Color(0x2589d1) },
-    uAccentColor: { value: new THREE.Color(0xb18a2d) },
+    uBaseColor: { value: new THREE.Color(0x2fa7f0) },
+    uAccentColor: { value: new THREE.Color(0xc99f35) },
     // How hard the background is optically displaced (the fluid/lens
     // refraction). 0 = a perfectly undistorted field.
     uRefract: { value: 1.0 },
@@ -3090,16 +3090,16 @@ Hey Ciel</textarea>
         // travel that the bands are separate COLOURS rather than one hue
         // at different brightnesses, but all of it staying inside the
         // blue->cyan family the base colour sits in.
-        vec3 voidTeal    = hueRot(uBaseColor, -0.035) * 0.14;
-        vec3 blackAccent = uBaseColor * 0.03;
-        vec3 darkBlue    = hueRot(uBaseColor, -0.018) * 0.58;
-        vec3 midBlue     = hueRot(uBaseColor,  0.015) * 1.05;
-        vec3 ltBlue      = hueRot(uBaseColor,  0.040) * 1.25;
-        vec3 paleBlue    = hueRot(uBaseColor,  0.058) * 1.50;
-        vec3 white       = mix(uBaseColor * 1.8, vec3(1.0), 0.55);
+        vec3 voidTeal    = hueRot(uBaseColor, -0.035) * 0.20;
+        vec3 blackAccent = uBaseColor * 0.05;
+        vec3 darkBlue    = hueRot(uBaseColor, -0.018) * 0.72;
+        vec3 midBlue     = hueRot(uBaseColor,  0.015) * 1.25;
+        vec3 ltBlue      = hueRot(uBaseColor,  0.040) * 1.45;
+        vec3 paleBlue    = hueRot(uBaseColor,  0.058) * 1.75;
+        vec3 white       = mix(uBaseColor * 2.1, vec3(1.0), 0.55);
         vec3 deepTeal    = hueRot(uBaseColor,  0.050) * 0.7;
         vec3 warmAccent  = uAccentColor;
-        vec3 coolAccent  = uAccentColor * 0.85;
+        vec3 coolAccent  = uAccentColor * 1.0;
 
         vec3 col = mix(voidTeal, darkBlue, smoothstep(-0.8, -0.1, n));
         col = mix(col, midBlue, smoothstep(-0.2, 0.4, n));
@@ -9523,8 +9523,8 @@ const MINI_CHAT_PAD = 3;
   // Same double-click-to-reset pattern as the sliders above, works
   // identically for <input type="color"> - just resets .value and
   // dispatches 'input' so each picker's own listener re-applies it.
-  addResetOnDoubleClick(bgBaseColorPicker, '#175c99');
-  addResetOnDoubleClick(bgAccentColorPicker, '#806b2e');
+  addResetOnDoubleClick(bgBaseColorPicker, '#2fa7f0');
+  addResetOnDoubleClick(bgAccentColorPicker, '#c99f35');
   addResetOnDoubleClick(colorPicker, '#ffffff');
   addResetOnDoubleClick(document.getElementById('speaking-glow-slider'), 200);
   addResetOnDoubleClick(visualPosXSlider, 0);
