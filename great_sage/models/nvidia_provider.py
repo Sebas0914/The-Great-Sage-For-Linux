@@ -23,7 +23,7 @@ class NvidiaProvider(ModelProvider):
     def __init__(self, api_key: str = "", model: str = "",
                  base_url: str = "https://integrate.api.nvidia.com/v1",
                  timeout: int = 120, temperature: float = 0.2,
-                 max_tokens: int = 2048, reasoning_effort: str = "",
+                 max_tokens: int = 1024, reasoning_effort: str = "",
                  reasoning_budget: int | None = None,
                  enable_thinking: bool | None = None):
         self.api_key = (api_key or "").strip()
