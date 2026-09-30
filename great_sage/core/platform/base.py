@@ -2,6 +2,8 @@
 from abc import ABC, abstractmethod
 from typing import Optional
 
+from .capabilities import PlatformCapabilities
+
 class Hotkey(ABC):
     @abstractmethod
     def start(self) -> bool: ...
@@ -21,6 +23,25 @@ class AppLauncher(ABC):
 class WindowInfo(ABC):
     @abstractmethod
     def focused_window_title(self) -> Optional[str]: ...
+
+class Platform(ABC):
+    """Common platform contract used by the server and tools."""
+    @property
+    @abstractmethod
+    def hotkey(self): ...
+    @property
+    @abstractmethod
+    def launcher(self): ...
+    @property
+    @abstractmethod
+    def windows(self): ...
+    @property
+    @abstractmethod
+    def paths(self): ...
+    @property
+    @abstractmethod
+    def capabilities(self) -> PlatformCapabilities: ...
+
 
 class DataPaths(ABC):
     @abstractmethod
