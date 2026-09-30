@@ -246,6 +246,7 @@ def build_provider(data, fallback):
                 timeout=settings.NVIDIA_API_TIMEOUT,
                 reasoning_budget=0,
                 enable_thinking=False,
+                max_tokens=512,
             )
             complex_provider = NvidiaProvider(
                 api_key=key,
