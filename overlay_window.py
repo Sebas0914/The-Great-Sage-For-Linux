@@ -259,11 +259,14 @@ class OverlayView(QWebEngineView):
         self.setAttribute(Qt.WA_NoSystemBackground, True)
         self.setAttribute(Qt.WA_OpaquePaintEvent, False)
 
-        # En Wayland la superficie LayerShell debe ser SOLO del tamaño del
-        # overlay. Una superficie fullscreen puede hacer que QWebEngine/Chromium
-        # pinte el fondo transparente como negro y bloquee todo el escritorio.
-        # El compositor mantiene esta superficie por encima de las ventanas
-        # normales; Raphael sigue siendo el contenido de este cuadrado.
+        # Wayland uses one fullscreen LayerShell surface for desktop Raphael.
+        # The visual itself stays compact; hud_prototype.html scales and moves
+        # it inside this surface. Input regions are restricted to Raphael and
+        # any visible controls, so the transparent area does not swallow the
+        # desktop underneath.
+        #
+        # Keep the requested 340px square as the initial fallback geometry.
+        # LayerShell replaces it with the monitor geometry once configured.
         self.resize(size, size)
         effective_size = size
 
@@ -1536,7 +1539,7 @@ def main() -> int:
     # leaving an invisible process running with no window.
     def _failsafe():
         if not view.isVisible():
-            # LayerShell ya determina la geometría en Wayland.
+            # LayerShell determines the fullscreen geometry on Wayland.
             if not WAYLAND_SESSION:
                 place_top_right(view, args.size)
             view.show()
