@@ -91,7 +91,7 @@ OPEN_PANEL_PREFIX = "GS_OPEN_PANEL:"
 # current monitor in PanelView.showEvent(), so HiDPI and different resolutions
 # remain usable without hard-coding 1920x1080.
 PANEL_SIZE = (960, 800)
-PANEL_SCREEN_FRACTION = 0.88
+PANEL_SCREEN_FRACTION = 1.0
 PANEL_MAX_SIZE = (1440, 1000)
 
 # Tight to the corner. The overlay is meant to tuck out of the way, and
@@ -1222,7 +1222,7 @@ class PanelView(QWebEngineView):
 
     def __init__(self, section: str):
         super().__init__()
-        self.setWindowFlags(Qt.FramelessWindowHint)
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
         self.resize(*PANEL_SIZE)
         self.setWindowTitle(f"Great Sage - {section}")
         self._drag_from = None
