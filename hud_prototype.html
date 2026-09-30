@@ -5864,7 +5864,7 @@ const MINI_CHAT_PAD = 3;
   // "thinks, then speaks" feel, at the cost of a quiet gap up front
   // while the first clip is synthesised. Off, text streams in as the
   // model writes it - visible sooner, but running ahead of the speech.
-  let captionFollowsSpeech = true;
+  let captionFollowsSpeech = false;
   // Text already revealed because its audio has played. Kept apart from
   // replyBuffer, which is everything the model has WRITTEN - the two
   // deliberately run at different rates.
