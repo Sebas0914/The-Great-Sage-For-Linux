@@ -2,7 +2,6 @@
 from abc import ABC, abstractmethod
 from typing import Optional
 
-from .capabilities import PlatformCapabilities
 
 class Hotkey(ABC):
     @abstractmethod
@@ -40,7 +39,7 @@ class Platform(ABC):
     def paths(self): ...
     @property
     @abstractmethod
-    def capabilities(self) -> PlatformCapabilities: ...
+    def capabilities(self): ...
 
 
 class DataPaths(ABC):
