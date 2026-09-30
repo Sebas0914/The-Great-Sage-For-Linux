@@ -729,7 +729,6 @@ def _handle_chat(text, engine, voice, sink, websocket, loop,
     # result still dropped the ends of sentences. One clip has no seams.
     streaming_speech = (
         not getattr(settings, "VOICE_SINGLE_SHOT", True)
-        and not getattr(settings, "VOICE_SPEAK_JAPANESE", True)
         and voice is not None
         and hasattr(voice, "speak_stream")
         and voice.current_sink is sink
@@ -1075,9 +1074,11 @@ def _translate_subtitles(provider, text: str) -> str:
             return translated
 
         log.error(
-            "Could not produce a validated Spanish subtitle; suppressing "
-            "the Japanese fallback instead of displaying the wrong language."
+            "Could not produce a validated Spanish subtitle."
         )
+        # Keep the turn visible even when the subtitle translation backend
+        # fails. The original response is Japanese by design, so do not
+        # pretend it is Spanish; the HUD will show its normal reply fallback.
         return ""
 
     except Exception:
