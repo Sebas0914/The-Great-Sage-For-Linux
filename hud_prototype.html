@@ -6179,12 +6179,18 @@ const MINI_CHAT_PAD = 3;
         showCaption(replyBuffer);
       }
     } else if (msg.type === 'subtitle_text') {
-      // Keep the complete Spanish translation in a buffer; the visible
-      // text is typed while Raphael is actually speaking.
+      // Keep the complete Spanish translation in a buffer. Desktop
+      // subtitles must also remain visible when TTS is unavailable or
+      // synthesis fails; waiting for an audio event made a failed voice
+      // engine look like a failed subtitle system too.
       spanishSubtitleActive = true;
       aiThinking = false;
       spokenSoFar = '';
+      desktopSpeechPulseSeen = false;
       setDesktopSubtitleSource(msg.text || '');
+      if (DESKTOP_RAPHAEL_MODE) {
+        showDesktopSubtitle(cleanDesktopSubtitleText(msg.text || ''));
+      }
     } else if (msg.type === 'reply_done') {
       // The server sends the FINAL reply text here, which is not always what
       // was streamed: the guardrails can substitute a reply after generation
