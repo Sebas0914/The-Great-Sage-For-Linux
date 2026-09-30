@@ -24,22 +24,32 @@ extern "C" int gs_configure_layer(
     // Top + right anchors give us a small, compositor-managed surface that
     // stays above normal windows without needing fullscreen input capture.
     LayerShellQt::Window::Anchors anchors;
-    anchors |= LayerShellQt::Window::AnchorTop;
-    anchors |= LayerShellQt::Window::AnchorRight;
-    layer->setAnchors(anchors);
-
-    // These margins place the small surface near the top-right corner.
-    layer->setMargins(QMargins(margin_top, margin_right, 0, 0));
+    const bool fullscreen_panel = (width >= 1000 || height >= 700);
+    if (fullscreen_panel) {
+        anchors |= LayerShellQt::Window::AnchorTop;
+        anchors |= LayerShellQt::Window::AnchorBottom;
+        anchors |= LayerShellQt::Window::AnchorLeft;
+        anchors |= LayerShellQt::Window::AnchorRight;
+        layer->setAnchors(anchors);
+        layer->setMargins(QMargins(0, 0, 0, 0));
+        layer->setExclusiveZone(-1);
+        layer->setKeyboardInteractivity(
+            LayerShellQt::Window::KeyboardInteractivityExclusive
+        );
+        layer->setActivateOnShow(true);
+    } else {
+        anchors |= LayerShellQt::Window::AnchorTop;
+        anchors |= LayerShellQt::Window::AnchorRight;
+        layer->setAnchors(anchors);
+        layer->setMargins(QMargins(margin_top, margin_right, 0, 0));
+        layer->setExclusiveZone(0);
+        layer->setKeyboardInteractivity(
+            LayerShellQt::Window::KeyboardInteractivityNone
+        );
+        layer->setActivateOnShow(false);
+    }
     layer->setDesiredSize(QSize(width, height));
-
-    layer->setExclusiveZone(0);
     layer->setLayer(LayerShellQt::Window::LayerOverlay);
-
-    layer->setKeyboardInteractivity(
-        LayerShellQt::Window::KeyboardInteractivityNone
-    );
-
-    layer->setActivateOnShow(false);
 
     return 0;
 }
