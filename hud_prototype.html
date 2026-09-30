@@ -6295,6 +6295,24 @@ const MINI_CHAT_PAD = 3;
       // start its countdown.
       speechInProgress = false;
       finishDesktopSubtitle();
+      // Hard cleanup fallback: finishDesktopSubtitle intentionally animates the
+      // text out, but the box must never survive a completed speech turn.
+      setTimeout(() => {
+        const box = document.getElementById('caption-box');
+        const el = document.getElementById('caption-text');
+        if (box) {
+          box.classList.remove('show', 'closing');
+          box.style.removeProperty('opacity');
+          box.style.removeProperty('visibility');
+        }
+        if (el) {
+          el.textContent = '';
+          el.scrollTop = 0;
+        }
+        desktopSubtitleShown = '';
+        desktopSubtitleQueue = '';
+        desktopSubtitleSource = '';
+      }, 1800);
       desktopSpeechPulseSeen = false;
       if (captionMode === 'bar') scheduleBarCaptionAutoHide();
       spanishSubtitleActive = false;
