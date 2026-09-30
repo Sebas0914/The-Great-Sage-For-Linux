@@ -2053,11 +2053,11 @@ body.mini.pet-state-confused #canvas-wrap { animation: gs-pet-confused 720ms eas
           <summary>Colour</summary>
           <div class="color-swatch-row">
             <div class="color-swatch-item">
-              <input type="color" id="bg-base-color-picker" class="color-swatch-btn" value="#175c99">
+              <input type="color" id="bg-base-color-picker" class="color-swatch-btn" value="#2589d1">
               <span>Background</span>
             </div>
             <div class="color-swatch-item">
-              <input type="color" id="bg-accent-color-picker" class="color-swatch-btn" value="#806b2e">
+              <input type="color" id="bg-accent-color-picker" class="color-swatch-btn" value="#b18a2d">
               <span>Accent</span>
             </div>
             <div class="color-swatch-item">
@@ -2862,8 +2862,8 @@ Hey Ciel</textarea>
     // replacing separately-named blue tones), uAccentColor drives the
     // warm/green weave-through accent. Defaults match the tuned-by-eye
     // blue/gold look, so picking neither leaves the current look intact.
-    uBaseColor: { value: new THREE.Color(0x175c99) },
-    uAccentColor: { value: new THREE.Color(0x806b2e) },
+    uBaseColor: { value: new THREE.Color(0x2589d1) },
+    uAccentColor: { value: new THREE.Color(0xb18a2d) },
     // How hard the background is optically displaced (the fluid/lens
     // refraction). 0 = a perfectly undistorted field.
     uRefract: { value: 1.0 },
@@ -3092,11 +3092,11 @@ Hey Ciel</textarea>
         // blue->cyan family the base colour sits in.
         vec3 voidTeal    = hueRot(uBaseColor, -0.035) * 0.14;
         vec3 blackAccent = uBaseColor * 0.03;
-        vec3 darkBlue    = hueRot(uBaseColor, -0.018) * 0.42;
-        vec3 midBlue     = hueRot(uBaseColor,  0.015) * 0.85;
-        vec3 ltBlue      = hueRot(uBaseColor,  0.040) * 1.05;
-        vec3 paleBlue    = hueRot(uBaseColor,  0.058) * 1.30;
-        vec3 white       = mix(uBaseColor * 1.6, vec3(1.0), 0.55);
+        vec3 darkBlue    = hueRot(uBaseColor, -0.018) * 0.58;
+        vec3 midBlue     = hueRot(uBaseColor,  0.015) * 1.05;
+        vec3 ltBlue      = hueRot(uBaseColor,  0.040) * 1.25;
+        vec3 paleBlue    = hueRot(uBaseColor,  0.058) * 1.50;
+        vec3 white       = mix(uBaseColor * 1.8, vec3(1.0), 0.55);
         vec3 deepTeal    = hueRot(uBaseColor,  0.050) * 0.7;
         vec3 warmAccent  = uAccentColor;
         vec3 coolAccent  = uAccentColor * 0.85;
