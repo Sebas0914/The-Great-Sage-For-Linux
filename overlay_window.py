@@ -142,6 +142,13 @@ WAYLAND_SESSION = (
     and os.environ.get("XDG_SESSION_TYPE", "").lower() == "wayland"
 )
 
+# LayerShellQt requires the shell integration to be selected BEFORE Qt creates
+# any Wayland platform surface. Without this, Window::get() can fall back to
+# an ordinary xdg_toplevel; setLayer/anchors then have no compositor effect.
+# This was the reason the panel kept behaving like a small normal window.
+if WAYLAND_SESSION:
+    os.environ.setdefault("QT_WAYLAND_SHELL_INTEGRATION", "layer-shell")
+
 _WL_LAYER = None
 _WL_INPUT = None
 
@@ -1283,6 +1290,10 @@ class PanelView(QWebEngineView):
         if ptr is None:
             return False
         try:
+            qwindow = self.windowHandle()
+            screen = QGuiApplication.primaryScreen()
+            if qwindow is not None and screen is not None:
+                qwindow.setScreen(screen)
             result = int(layer.gs_configure_panel_layer(ptr, int(width), int(height)))
             if result != 0:
                 print(
