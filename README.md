@@ -123,3 +123,13 @@ CI runs these checks on the Linux development branch and pull requests.
 ## License and assets
 
 Check the repository's license and asset-specific documentation before redistributing voice recordings or other third-party media. Pre-recorded character voice lines are not treated as original project code.
+
+### Platform diagnostics
+
+Before reporting a desktop-specific issue, run:
+
+```bash
+python -m great_sage.core.platform.diagnostics
+```
+
+This reports the detected OS, display server, desktop environment, and the capabilities Great Sage can use in the current session.
