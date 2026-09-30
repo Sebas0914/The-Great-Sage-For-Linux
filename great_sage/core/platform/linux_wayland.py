@@ -93,7 +93,7 @@ class LinuxWaylandLauncher(LinuxLauncher):
         return f"Opened {value}."
 
     def capture_screen(self, output_path: str, region: str = "screen") -> str:
-        """Capture the Wayland desktop through KDE Spectacle synchronously."""
+        """Capture the Wayland desktop using a generic compositor-safe tool."""
         path = str(Path(output_path).expanduser())
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         mode = (region or "screen").strip().lower()
@@ -119,7 +119,7 @@ class LinuxWaylandLauncher(LinuxLauncher):
                 check=False,
             )
         except subprocess.TimeoutExpired as exc:
-            raise RuntimeError("Spectacle timed out while capturing the screen.") from exc
+            raise RuntimeError("Wayland screen capture timed out.") from exc
 
         if result.returncode != 0:
             detail = (result.stderr or "").strip()
