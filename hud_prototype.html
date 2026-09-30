@@ -1973,6 +1973,11 @@ body.mini.pet-state-confused #canvas-wrap { animation: gs-pet-confused 720ms eas
             </div>
 
             <div class="ai-set-group">
+              <label>NVIDIA API key</label>
+              <input id="ai-key-nvidia" type="password" autocomplete="off"
+                     placeholder="not set">
+            </div>
+            <div class="ai-set-group">
               <label>Anthropic API key</label>
               <input id="ai-key-anthropic" type="password" autocomplete="off"
                      placeholder="not set">
@@ -9529,7 +9534,8 @@ const MINI_CHAT_PAD = 3;
   // The page never holds a real key it did not just receive from the
   // user: the server sends MASKS, and a mask sent back is ignored rather
   // than stored, so a saved key can be replaced but never read out.
-  const AI_KEY_FIELDS = { anthropic: 'ai-key-anthropic',
+  const AI_KEY_FIELDS = { nvidia: 'ai-key-nvidia',
+                          anthropic: 'ai-key-anthropic',
                           openai: 'ai-key-openai',
                           tts: 'ai-key-tts' };
   function renderAiSettings(cfg) {
