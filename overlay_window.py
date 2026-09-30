@@ -174,6 +174,12 @@ def _load_wayland_native():
                 ctypes.c_void_p, ctypes.c_int, ctypes.c_int
             ]
             _WL_LAYER.gs_position_layer.restype = ctypes.c_int
+            _WL_LAYER.gs_configure_panel_layer.argtypes = [
+                ctypes.c_void_p,
+                ctypes.c_int,
+                ctypes.c_int,
+            ]
+            _WL_LAYER.gs_configure_panel_layer.restype = ctypes.c_int
 
         if os.path.isfile(input_path):
             _WL_INPUT = ctypes.CDLL(input_path)
@@ -1283,9 +1289,7 @@ class PanelView(QWebEngineView):
         if ptr is None:
             return False
         try:
-            result = int(layer.gs_configure_layer(
-                ptr, int(width), int(height), 0, 0
-            ))
+            result = int(layer.gs_configure_panel_layer(ptr, int(width), int(height)))
             if result != 0:
                 print(
                     f"[panel] gs_configure_layer returned {result}",
