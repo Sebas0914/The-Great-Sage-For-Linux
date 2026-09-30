@@ -19,10 +19,7 @@ from .capabilities import detect_capabilities
 from .common import LinuxLauncher, LinuxDataPaths
 
 
-class LinuxX11Launcher(AppLauncher):
-    def open_application(self, name: str) -> str:
-        from .linux_wayland import LinuxWaylandLauncher
-        return LinuxWaylandLauncher().open_application(name)
+class LinuxX11Launcher(LinuxLauncher):
 
     def open_path(self, path: str) -> str:
         target = Path(os.path.expandvars(os.path.expanduser((path or "").strip())))
