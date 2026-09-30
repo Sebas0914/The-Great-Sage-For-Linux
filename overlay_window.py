@@ -991,10 +991,11 @@ class OverlayView(QWebEngineView):
                     pos = event.position().toPoint()
 
                     if self._point_inside_wayland_rect(pos):
-                        # The second interactive rectangle is the caption.
-                        # Its mouse events belong to the web page so the
-                        # caption's own MOVE CAPTION gesture can run. Only
-                        # presses on Raphael are promoted to host-side drag.
+                        # Once Raphael is grabbed, make the ENTIRE fullscreen
+                        # layer interactive immediately. Previously we waited
+                        # for 6px of movement before expanding the input region;
+                        # on Wayland that let the pointer leave the small core
+                        # region and permanently lose horizontal drag events.
                         rects = self._wayland_interactive_rects
                         if (
                             len(rects) > 1
@@ -1007,16 +1008,21 @@ class OverlayView(QWebEngineView):
                         self._drag_window_offset = (
                             self._drag_press_pos - self.frameGeometry().topLeft()
                         )
-                        self._dragging = False
+                        self._dragging = True
+                        self._apply_wayland_input_region(
+                            0, 0, self.width(), self.height()
+                        )
                         try:
                             self.page().runJavaScript(
                                 "window.__desktopBeginDrag "
                                 "&& window.__desktopBeginDrag(%s,%s);"
+                                " window.__desktopSetHostDragging "
+                                "&& window.__desktopSetHostDragging(true);"
                                 % (pos.x(), pos.y())
                             )
                         except Exception:
                             pass
-                        return False
+                        return True
 
             elif et == QEvent.MouseMove:
                 if (
@@ -1027,25 +1033,6 @@ class OverlayView(QWebEngineView):
 
                     dx = current.x() - self._drag_press_pos.x()
                     dy = current.y() - self._drag_press_pos.y()
-
-                    if not self._dragging and (dx * dx + dy * dy) >= 36:
-                        self._dragging = True
-                        self._input_mask_generation += 1
-
-                        # Temporarily make the whole fullscreen surface
-                        # interactive so the pointer cannot leave the
-                        # original Raphael region while dragging.
-                        self._apply_wayland_input_region(
-                            0, 0, self.width(), self.height()
-                        )
-
-                        try:
-                            self.page().runJavaScript(
-                                "window.__desktopSetHostDragging "
-                                "&& window.__desktopSetHostDragging(true);"
-                            )
-                        except Exception:
-                            pass
 
                     if self._dragging:
                         speed = (dx * dx + dy * dy) ** 0.5
