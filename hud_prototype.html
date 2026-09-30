@@ -5992,7 +5992,15 @@ const MINI_CHAT_PAD = 3;
       desktopSubtitleShown = '';
       desktopSubtitleQueue = '';
       desktopSubtitleSource = '';
-      if (box) box.classList.remove('show');
+      if (box) {
+        box.classList.remove('show', 'closing');
+        box.style.removeProperty('opacity');
+        box.style.removeProperty('visibility');
+      }
+      if (el) {
+        el.textContent = '';
+        el.scrollTop = 0;
+      }
       return;
     }
 
