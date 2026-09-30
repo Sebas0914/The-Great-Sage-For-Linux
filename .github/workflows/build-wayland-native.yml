@@ -24,7 +24,7 @@ jobs:
       - name: Install native dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y g++ qt6-base-dev liblayershellqtinterface-dev
+          sudo apt-get install -y g++ qt6-base-dev qt6-base-private-dev liblayershellqtinterface-dev libwayland-dev
 
       - name: Build LayerShellQt bridge
         run: |
