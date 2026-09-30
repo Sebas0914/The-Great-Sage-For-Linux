@@ -133,3 +133,22 @@ python -m great_sage.core.platform.diagnostics
 ```
 
 This reports the detected OS, display server, desktop environment, and the capabilities Great Sage can use in the current session.
+
+
+## Linux native Wayland bridge
+
+The repository contains the complete source and generated native bridge used
+by the Wayland overlay:
+
+- `native/gs_layer_config.cpp` — LayerShellQt integration source.
+- `native/libgs_layer_config.so` — generated bridge loaded by the overlay.
+- `native/build_layershell.sh` — reproducible local build command.
+
+System dependencies such as Qt6, LayerShellQt development headers/libraries,
+the C++ compiler, Python, and virtual environments are intentionally kept
+outside the repository. They are installed separately on the target machine.
+
+GitHub Actions also rebuilds `native/libgs_layer_config.so` whenever the
+native source/build script changes, so the tracked binary stays synchronized
+with the source.
+
