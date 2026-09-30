@@ -649,6 +649,13 @@ def _translate_spoken_japanese(provider, text: str) -> str:
         ])
         return (out or "").strip()
 
+    # The active Great Sage prompt already requests Japanese output.
+    # When the model has complied, do not pay for a second NVIDIA round-trip
+    # merely to translate Japanese into Japanese. Keep the translation path
+    # for English/Spanish output so the voice remains robust if routing changes.
+    if looks_japanese(value):
+        return value
+
     try:
         translated = translate(
             "Translate this reply into natural Japanese for Raphael to speak."
