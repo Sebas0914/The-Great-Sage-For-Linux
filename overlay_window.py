@@ -86,7 +86,13 @@ OPEN_PANEL_PREFIX = "GS_OPEN_PANEL:"
 
 # Panel windows are ordinary opaque windows - they show forms and lists,
 # not a floating visual, so transparency would only hurt readability.
-PANEL_SIZE = (560, 640)
+# Chat/settings/history panels should use the available desktop instead of
+# being locked to a tiny 560x640 box. The actual size is calculated from the
+# current monitor in PanelView.showEvent(), so HiDPI and different resolutions
+# remain usable without hard-coding 1920x1080.
+PANEL_SIZE = (960, 800)
+PANEL_SCREEN_FRACTION = 0.88
+PANEL_MAX_SIZE = (1440, 1000)
 
 # Tight to the corner. The overlay is meant to tuck out of the way, and
 # 24px read as floating loose beside the edge.
@@ -1229,12 +1235,25 @@ class PanelView(QWebEngineView):
         self.loadFinished.connect(lambda _ok: self._install_mouse_filter())
 
     def showEvent(self, event):
-        # The render widget may not exist yet when the page finishes
-        # loading, and installing on a proxy that is not there yet is a
-        # silent no-op - which leaves the title bar dead with nothing to
-        # show why. The overlay installs twice for the same reason.
+        # The old fixed 560x640 panel was tiny on a 1080p/1440p desktop.
+        # Size the standalone chat/settings/history window from the current
+        # screen so the UI is readable while still leaving a desktop margin.
         super().showEvent(event)
         self._install_mouse_filter()
+        screen = self.screen() or QGuiApplication.primaryScreen()
+        if screen is not None:
+            area = screen.availableGeometry()
+            width = min(PANEL_MAX_SIZE[0], max(PANEL_SIZE[0],
+                       int(area.width() * PANEL_SCREEN_FRACTION)))
+            height = min(PANEL_MAX_SIZE[1], max(PANEL_SIZE[1],
+                        int(area.height() * PANEL_SCREEN_FRACTION)))
+            width = min(width, area.width())
+            height = min(height, area.height())
+            self.resize(width, height)
+            self.move(
+                area.x() + max(0, (area.width() - width) // 2),
+                area.y() + max(0, (area.height() - height) // 2),
+            )
         QTimer.singleShot(0, self._install_mouse_filter)
 
     def _install_mouse_filter(self):
