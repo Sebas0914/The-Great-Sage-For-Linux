@@ -238,7 +238,10 @@ def check_overlay_host() -> Requirement:
     # would name a Qt the overlay never uses: 6.10.1 here, 6.4.3 in the
     # venv that actually runs, and only 6.4.x is free of the flicker.
     here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    venv_py = os.path.join(here, ".overlay-venv", "Scripts", "python.exe")
+    if os.name == "nt":
+        venv_py = os.path.join(here, ".overlay-venv", "Scripts", "python.exe")
+    else:
+        venv_py = os.path.join(here, ".overlay-venv", "bin", "python")
     if os.path.exists(venv_py):
         rc, out = _run([venv_py, "-c",
                         "from PySide6 import QtCore;print(QtCore.qVersion())"],

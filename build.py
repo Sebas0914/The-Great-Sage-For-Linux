@@ -37,7 +37,10 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 DIST = os.path.join(HERE, "dist")
 APP_DIST = os.path.join(DIST, "GreatSage")
 OVERLAY_DIST = os.path.join(DIST, "GreatSageOverlay")
-OVERLAY_VENV_PY = os.path.join(HERE, ".overlay-venv", "Scripts", "python.exe")
+if os.name == "nt":
+    OVERLAY_VENV_PY = os.path.join(HERE, ".overlay-venv", "Scripts", "python.exe")
+else:
+    OVERLAY_VENV_PY = os.path.join(HERE, ".overlay-venv", "bin", "python")
 
 
 def _run(cmd, label):
