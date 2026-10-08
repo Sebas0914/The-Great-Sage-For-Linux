@@ -168,6 +168,36 @@ def take_chunk(buffer: str, is_first: bool, final: bool = False):
     return None, buffer
 
 
+def _load_audio_with_soundfile(
+    filepath: str,
+    frame_offset: int = 0,
+    num_frames: int = -1,
+    normalize: bool = True,
+    channels_first: bool = True,
+    format: Optional[str] = None,
+):
+    """Load audio without routing through TorchCodec.
+
+    F5-TTS only needs a CPU float tensor here. Using soundfile avoids the
+    TorchCodec decoder path that can require CUDA 13's libnvrtc.so.13 on
+    an otherwise working CUDA 12.8 PyTorch installation.
+    """
+    import soundfile as sf
+    import torch
+
+    audio, sample_rate = sf.read(
+        filepath,
+        dtype="float32",
+        always_2d=True,
+        frames=-1 if num_frames is None or num_frames < 0 else num_frames,
+        start=max(0, int(frame_offset)),
+    )
+    tensor = torch.from_numpy(audio.T.copy())
+    if not channels_first:
+        tensor = tensor.transpose(0, 1)
+    return tensor, sample_rate
+
+
 def _describe_cause_chain(exc, limit=6):
     """"A: msg <- B: msg <- ..." down to the exception that really failed.
 
@@ -420,14 +450,25 @@ class F5TTSVoiceOutput(VoiceOutput):
     def _generate_once(self, text: str):
         ref_audio, ref_text = self._ref_cache
         try:
-            wav, sample_rate, _ = self._infer_process(
-                ref_audio, ref_text, text,
-                self._api.ema_model, self._api.vocoder, self._api.mel_spec_type,
-                nfe_step=self._nfe_step,
-                speed=getattr(settings, "F5_SPEED", 1.0),
-                show_info=lambda *a, **k: None,
-                device=self._api.device,
-            )
+            # F5-TTS calls torchaudio.load() internally. Newer torchaudio
+            # routes that through TorchCodec, which can require CUDA 13's
+            # libnvrtc.so.13. Patch only this synthesis call to use the
+            # soundfile decoder while preserving torchaudio's return shape.
+            import torchaudio
+
+            original_load = torchaudio.load
+            torchaudio.load = _load_audio_with_soundfile
+            try:
+                wav, sample_rate, _ = self._infer_process(
+                    ref_audio, ref_text, text,
+                    self._api.ema_model, self._api.vocoder, self._api.mel_spec_type,
+                    nfe_step=self._nfe_step,
+                    speed=getattr(settings, "F5_SPEED", 1.0),
+                    show_info=lambda *a, **k: None,
+                    device=self._api.device,
+                )
+            finally:
+                torchaudio.load = original_load
         except Exception as exc:
             raise VoiceError(f"F5-TTS synthesis failed: {exc}") from exc
         if self._rvc is not None:
