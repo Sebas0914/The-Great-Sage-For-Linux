@@ -43,6 +43,11 @@ def transcribe(audio: np.ndarray) -> str:
         audio,
         language=language,
         vad_filter=True,
+        vad_parameters={
+            "threshold": 0.3,
+            "min_speech_duration_ms": 100,
+            "min_silence_duration_ms": 500,
+        },
         initial_prompt=initial_prompt,
         condition_on_previous_text=False,
     )

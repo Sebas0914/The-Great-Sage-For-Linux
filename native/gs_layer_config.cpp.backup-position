@@ -1,0 +1,53 @@
+#include <QWindow>
+#include <QSize>
+#include <QMargins>
+#include <LayerShellQt/window.h>
+
+extern "C" int gs_configure_layer(
+    void *window_ptr,
+    int width,
+    int height,
+    int margin_top,
+    int margin_right)
+{
+    auto *window = static_cast<QWindow *>(window_ptr);
+    if (!window) return 1;
+
+    auto *layer = LayerShellQt::Window::get(window);
+    if (!layer) return 2;
+
+    // La superficie NO debe ocupar toda la pantalla.
+    // Solo Raphael necesita una superficie encima del escritorio.
+    //
+    // TOP + RIGHT => esquina superior derecha.
+    // DESIRED SIZE => superficie pequeña, por lo que fuera de ella
+    // Wayland puede entregar los clics a la aplicación inferior.
+    LayerShellQt::Window::Anchors anchors;
+    anchors |= LayerShellQt::Window::AnchorTop;
+    anchors |= LayerShellQt::Window::AnchorRight;
+    layer->setAnchors(anchors);
+
+    layer->setMargins(
+        QMargins(
+            margin_top,   // left
+            margin_right, // top-right: segundo argumento es right
+            0,
+            0
+        )
+    );
+
+    layer->setDesiredSize(QSize(width, height));
+    layer->setExclusiveZone(0);
+
+    // Overlay = por encima de las ventanas normales.
+    layer->setLayer(LayerShellQt::Window::LayerOverlay);
+
+    // Nunca roba el foco de teclado.
+    layer->setKeyboardInteractivity(
+        LayerShellQt::Window::KeyboardInteractivityNone
+    );
+
+    layer->setActivateOnShow(false);
+
+    return 0;
+}

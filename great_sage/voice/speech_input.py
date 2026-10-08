@@ -67,35 +67,84 @@ class PushToTalkRecorder:
     def start(self) -> None:
         with self._lock:
             if self._stream is not None:
+                log.warning("Push-to-talk start ignored: recorder is already active")
                 return
             self._frames = []
 
             def callback(indata, frames, time_info, status):
-                self._frames.append(indata[:, 0].copy())
-                if self._on_level is not None:
-                    self._on_level(float(np.sqrt(np.mean(np.square(indata)))))
+                if status:
+                    log.warning("Microphone stream status: %s", status)
+                if indata.size:
+                    self._frames.append(indata[:, 0].copy())
+                    if self._on_level is not None:
+                        self._on_level(
+                            float(np.sqrt(np.mean(np.square(indata))))
+                        )
 
-            self._stream = sd.InputStream(
-                samplerate=SAMPLE_RATE, channels=1, dtype="float32",
-                device=self.device, callback=callback,
+            try:
+                self._stream = sd.InputStream(
+                    samplerate=SAMPLE_RATE, channels=1, dtype="float32",
+                    device=self.device, callback=callback,
+                )
+                self._stream.start()
+            except Exception:
+                self._stream = None
+                log.exception(
+                    "Could not open microphone input stream (device=%r).",
+                    self.device,
+                )
+                raise
+
+            log.info(
+                "Microphone recording started (device=%r, samplerate=%d).",
+                self.device, SAMPLE_RATE,
             )
-            self._stream.start()
 
     def stop(self) -> None:
         with self._lock:
             if self._stream is None:
+                log.warning("Push-to-talk stop ignored: recorder is not active")
                 return
-            self._stream.stop()
-            self._stream.close()
-            self._stream = None
+            try:
+                self._stream.stop()
+                self._stream.close()
+            finally:
+                self._stream = None
             frames = self._frames
             self._frames = []
-        audio = np.concatenate(frames) if frames else np.zeros(0, dtype="float32")
+
+        audio = (
+            np.concatenate(frames)
+            if frames else np.zeros(0, dtype="float32")
+        )
+        seconds = audio.size / SAMPLE_RATE
+        log.info(
+            "Microphone recording stopped: %.2fs captured in %d blocks.",
+            seconds, len(frames),
+        )
         if audio.size < SAMPLE_RATE * MIN_UTTERANCE_S:
-            return  # too short to be a real recording - ignore accidental taps
-        text = transcribe(audio)
+            log.warning(
+                "Microphone recording discarded: %.2fs is shorter than "
+                "the %.1fs minimum.",
+                seconds, MIN_UTTERANCE_S,
+            )
+            return
+
+        try:
+            text = transcribe(audio)
+        except Exception:
+            log.exception(
+                "Microphone transcription failed after %.2fs of audio.",
+                seconds,
+            )
+            raise
         if text:
             self._on_result(text)
+        else:
+            log.warning(
+                "Microphone transcription returned no text for %.2fs of audio.",
+                seconds,
+            )
 
 
 class FollowUpListener:
